@@ -23,7 +23,7 @@ const Home = () => {
                         <Button as={Link} to="/classroom" size="lg" className="rounded-pill px-4" variant="success">
                             Take Exam
                         </Button>
-                            <Button size="lg" className="rounded-pill px-4" variant="primary" onClick={console.log("Create Exam clicked")}>
+                            <Button as={Link} to="/exam/manageExam" size="lg" className="rounded-pill px-4" variant="primary" onClick={console.log("Create Exam clicked")}>
                                 Create Exam
                         </Button>
                     </div>
