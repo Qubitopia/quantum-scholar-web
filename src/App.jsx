@@ -7,6 +7,7 @@ import Verify from './pages/verify.jsx';
 import NewAuth from './pages/newAuth.jsx';
 import ManageExam from './pages/exam/manageExam.jsx';
 import EditExam from './pages/exam/editExam.jsx';
+import ManageCandidates from './pages/exam/manageCandidates.jsx';
 
 function App() {
   const userType = "admin";
@@ -22,6 +23,7 @@ function App() {
             <Route path="/authNewUser/verify" element={<NewAuth />} />
             <Route path="/exam/manageExam" element={<ManageExam />} />
             <Route path="/exam/editExam" element={<EditExam />} />
+            <Route path="/exam/manageCandidates" element={<ManageCandidates />} />
           </>
         ) : (
           <>

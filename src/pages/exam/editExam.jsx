@@ -1,122 +1,77 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet, apiPut } from '../../common/api.js';
+import { apiGet, apiPut, apiPost } from '../../common/api.js';
 import { getCookie } from '../../common/cookie.js';
 import { useQuery } from '../../common/appUtils.js';
+import { idbGetTest, idbReplaceDraft, idbUpsertDraft } from '../../common/idbTestStore.js';
+import Dropdown from 'react-bootstrap/Dropdown';
+import Navbar from '../../components/navbar.jsx';
 
-// --- Helpers ---
-const safeParseJSON = (strOrObj, fallback = null) => {
-  if (!strOrObj) return fallback;
-  if (typeof strOrObj === 'object') return strOrObj;
-  try { return JSON.parse(strOrObj); } catch { return fallback; }
+
+/* Question / section factories */
+const makeEmptyTest = (title = 'Untitled Test') => ({ title, sections: [] });
+const makeEmptySection = (sectionId) => ({ sectionId, title: `Section ${sectionId}`, questionsToDisplay: 0, questions: [] });
+const makeEmptyQuestion = (type = 'mcq') => {
+  // Start with 2 options minimal; user can add more dynamically
+  if (type === 'msq') return { questionNumber: 0, type: 'msq', questionText: '', options: ['', ''], correctOptions: [], successMarks: 1, failureMarks: 0 };
+  if (type === 'open') return { questionNumber: 0, type: 'open', questionText: '', modelAnswer: '', successMarks: 5, failureMarks: 0 };
+  // MCQ default correctOption is -1 (unset) so choosing first option registers a change
+  return { questionNumber: 0, type: 'mcq', questionText: '', options: ['', ''], correctOption: -1, successMarks: 1, failureMarks: 0 };
 };
+const reindex = (section) => ({ ...section, questions: section.questions.map((q, i) => ({ ...q, questionNumber: i + 1 })) });
 
-const defaultOptions = () => ['Option 1', 'Option 2'];
 
-// Normalize questions from various shapes into our internal model
-function normalizeLoadedQuestions(raw, totalQ, openEnded) {
-  const out = [];
-  const isKeyed = raw && typeof raw === 'object' && !Array.isArray(raw);
-  const fromKeyed = () => {
-    const keys = Object.keys(raw).filter((k) => /^q\d+$/i.test(k)).sort((a, b) => Number(a.replace(/\D/g, '')) - Number(b.replace(/\D/g, '')));
-    const len = keys.length;
-    const textStartKeyed = Math.max(0, len - (openEnded || 0));
-    const arr = keys.map((k, i) => {
-      const q = raw[k] || {};
-      const t = String(q.type || q.Type || '').toLowerCase();
-      const type = t === 'text' ? 'text' : t === 'msq' ? 'msq' : t === 'mcq' ? 'mcq' : (i >= textStartKeyed ? 'text' : 'mcq');
-      const text = q.Question ?? q.question ?? '';
-      const marks = Number(q.marks ?? q.Marks ?? 1) || 1;
-      const options = Array.isArray(q.options) ? q.options.map(String) : (type === 'text' ? [] : defaultOptions());
-      return { id: i + 1, text: String(text || ''), type, options, marks };
-    });
-    return arr;
-  };
-  const fromArray = () => {
-    // Support {questions: [...]}
-    const qs = Array.isArray(raw?.questions) ? raw.questions : Array.isArray(raw) ? raw : [];
-    // provisional; final type/options decided below using last-N rule
-    return qs.map((txt, i) => ({ id: i + 1, text: String(txt || ''), type: 'mcq', options: defaultOptions(), marks: 1 }));
-  };
-  const arr = isKeyed ? fromKeyed() : fromArray();
-  // Ensure length to totalQ if provided
-  const target = totalQ && totalQ > 0 ? totalQ : arr.length;
-  const textStart = Math.max(0, target - (openEnded || 0));
-  for (let i = 0; i < target; i++) {
-    const existing = arr[i];
-    if (existing) {
-      out.push({
-        id: i + 1,
-        text: String(existing.text || ''),
-        type: i >= textStart ? 'text' : (existing.type === 'msq' ? 'msq' : existing.type === 'mcq' ? 'mcq' : 'mcq'),
-        options: (i >= textStart) ? [] : (Array.isArray(existing.options) && existing.options.length ? existing.options.map(String) : defaultOptions()),
-        marks: Number(existing.marks || 1) || 1,
+// Robust parser for backend questions_json (string) -> internal draft
+function parseBackendQuestionsJson(jsonString, fallbackTitle='Untitled Test') {
+  if (!jsonString || jsonString === '{}' || jsonString === 'null') {
+    return makeEmptyTest(fallbackTitle);
+  }
+  let raw;
+  try { raw = JSON.parse(jsonString); } catch { return makeEmptyTest(fallbackTitle); }
+  if (!raw || typeof raw !== 'object') return makeEmptyTest(fallbackTitle);
+  const sections = Array.isArray(raw.sections) ? raw.sections : [];
+  return {
+    title: raw.title || fallbackTitle,
+    sections: sections.map((s, sIdx) => {
+      const questions = Array.isArray(s.questions) ? s.questions : [];
+      return reindex({
+        sectionId: s.sectionId || s.section_id || (sIdx + 1),
+        title: s.title || `Section ${sIdx + 1}`,
+        questionsToDisplay: s.questionsToDisplay || s.questions_to_display || questions.length,
+        questions: questions.map((q, qIdx) => {
+          const baseType = q.type === 'open-ended' ? 'open' : (q.type || 'mcq');
+          const mcqDefaults = ['', '', '', ''];
+          // Use provided options; ensure at least 2 for choice types
+          const opts = q.options ? [...q.options] : (baseType === 'open' ? [] : [...mcqDefaults]);
+          if (baseType !== 'open' && opts.length < 2) {
+            while (opts.length < 2) opts.push('');
+          }
+          return {
+            questionNumber: q.questionNumber || q.question_number || (qIdx + 1),
+            type: baseType,
+            questionText: q.questionText || q.question_text || '',
+            options: opts,
+            // Backend may store 1-based indices; convert to 0-based internally. If null/undefined -> -1
+            correctOption: (() => {
+              const rawIdx = q.correctOption ?? q.correct_option;
+              if (rawIdx == null) return -1;
+              const zero = Number(rawIdx) - 1; // convert 1-based to 0-based
+              return zero >= 0 ? zero : -1;
+            })(),
+            correctOptions: (() => {
+              const arr = q.correctOptions || q.correct_options || [];
+              if (!Array.isArray(arr)) return [];
+              // convert each 1-based index to 0-based, filter invalid
+              return arr.map(v => Number(v) - 1).filter(v => v >= 0);
+            })(),
+            modelAnswer: q.modelAnswer || q.model_answer || '',
+            successMarks: q.successMarks ?? q.success_marks ?? (baseType === 'open' ? 10 : 1),
+            failureMarks: q.failureMarks ?? q.failure_marks ?? (baseType === 'mcq' || baseType === 'msq' ? 0 : 0),
+          };
+        })
       });
-    } else {
-      out.push({ id: i + 1, text: '', type: i >= textStart ? 'text' : 'mcq', options: i >= textStart ? [] : defaultOptions(), marks: 1 });
-    }
-  }
-  return out;
-}
-
-function normalizeLoadedAnswers(raw, questions) {
-  // raw may be keyed {q1:{option:1|[1,2]}}, or {answers:["text or option text"]}
-  const isKeyed = raw && typeof raw === 'object' && !Array.isArray(raw) && !Array.isArray(raw.answers);
-  if (isKeyed) {
-    const out = [];
-    for (let i = 0; i < questions.length; i++) {
-      const key = `q${i + 1}`;
-      const q = questions[i];
-      const a = raw[key] ?? {};
-      if (q.type === 'text') out.push(String(a.answer ?? a.text ?? ''));
-      else if (q.type === 'mcq') {
-        const idx = Number(a.option);
-        out.push(Number.isInteger(idx) ? idx : -1);
-      } else {
-        const arr = Array.isArray(a.option) ? a.option : [];
-        out.push(arr.filter((n) => Number.isInteger(n)));
-      }
-    }
-    return out;
-  }
-  // array form: answers as strings; for text, keep string; for objective, match option text(s)
-  const arr = Array.isArray(raw?.answers) ? raw.answers : Array.isArray(raw) ? raw : [];
-  return questions.map((q, i) => {
-    const v = arr[i];
-    if (q.type === 'text') return String(v || '');
-    if (typeof v !== 'string') return q.type === 'mcq' ? -1 : [];
-    const parts = v.split(',').map((s) => s.trim()).filter(Boolean);
-    if (q.type === 'mcq') {
-      const idx = q.options.findIndex((o) => o === v || o === parts[0]);
-      return idx >= 0 ? idx : -1;
-    }
-    // msq
-    const indices = parts.map((p) => q.options.findIndex((o) => o === p)).filter((i2) => i2 >= 0);
-    return indices;
-  });
-}
-
-function buildKeyedQuestionsJson(questions) {
-  const obj = {};
-  questions.forEach((q, i) => {
-    obj[`q${i + 1}`] = {
-      type: q.type.toUpperCase(),
-      Question: q.text,
-      marks: q.marks,
-      ...(q.type !== 'text' ? { options: q.options } : {}),
-    };
-  });
-  return obj;
-}
-
-function buildKeyedAnswersJson(questions, answers) {
-  const obj = {};
-  questions.forEach((q, i) => {
-    if (q.type === 'text') obj[`q${i + 1}`] = {};
-    else if (q.type === 'mcq') obj[`q${i + 1}`] = { option: Number.isInteger(answers[i]) ? answers[i] : -1 };
-    else obj[`q${i + 1}`] = { option: Array.isArray(answers[i]) ? answers[i] : [] };
-  });
-  return obj;
+    })
+  };
 }
 
 export default function EditExam() {
@@ -124,423 +79,546 @@ export default function EditExam() {
   const query = useQuery();
   const id = query.get('test_id');
   const token = getCookie('qs-token');
+  const [uploader, setUploader] = useState(false);
+  const [uploaderTarget, setUploaderTarget] = useState({ kind:'question', optionIndex:null });
 
-  const [exam, setExam] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]);
-  const [activeIdx, setActiveIdx] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [remote, setRemote] = useState(null); // server payload
+  const [draft, setDraft] = useState(makeEmptyTest());
   const [error, setError] = useState('');
-  const [qJson, setQJson] = useState('');
-  const [aJson, setAJson] = useState('');
-  const [jsonError, setJsonError] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [showJson, setShowJson] = useState(false);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonErr, setJsonErr] = useState('');
+  const [selected, setSelected] = useState({ sectionId: null, questionNumber: null });
+  const [reloading, setReloading] = useState(false);
 
-  const [dragIdx, setDragIdx] = useState(null);
-  const [dragOverIdx, setDragOverIdx] = useState(null);
-  const dragGhostRef = useRef(null);
+  // Initial load & any fetch triggers
+  const fetchRemote = async (force=false) => {
+    const res = await apiGet(`/api/test/${encodeURIComponent(id)}`, { token });
+    const data = res?.data;
+    if (!data) throw new Error('Exam not found');
+    setRemote(data);
+    const remoteStruct = parseBackendQuestionsJson(data.questions_json, data.test_name || 'Untitled Test');
+    const local = await idbGetTest(id);
 
-  const openEndedCount = useMemo(() => Number(exam?.number_of_open_ended_questions || 0) || 0, [exam]);
+    // Decide whether to overwrite local draft
+    let useRemote = false;
+    if (!local) useRemote = true; // nothing cached
+    else if (force) useRemote = true; // explicit refresh
+    else if (!local.draft.sections?.length && remoteStruct.sections.length) useRemote = true; // local empty, remote has content
+    else if (remoteStruct.sections.length > local.draft.sections.length) useRemote = true; // remote grew
 
+    if (useRemote) {
+      await idbReplaceDraft(id, remoteStruct, data.created_at || data.updated_at);
+      setDraft(remoteStruct);
+      setDirty(false);
+    } else if (local && !draft.sections.length) {
+      setDraft(local.draft);
+    }
+  };
+
+  // Initial load: IDB first, then remote.
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError('');
+    async function init() {
+      if (!token) { navigate('/login'); return; }
+      if (!id) { setError('No exam id'); navigate('/exam/manageExam'); return; }
       try {
-        if (!id) throw new Error('Missing test_id');
-        const res = await apiGet(`/api/test/${id}`, { token });
-        const data = res?.data || res || {};
-        if (cancelled) return;
-        setExam(data);
-        const totalQ = Number(data?.number_of_questions || 0) || 0;
-        const openEnded = Number(data?.number_of_open_ended_questions || 0) || 0;
-        const rawQ = safeParseJSON(data?.questions_json, data?.questions_json) || safeParseJSON(data?.questions, data?.Questions) || {};
-        const rawA = safeParseJSON(data?.answer_json, data?.answer_json) || safeParseJSON(data?.answers, data?.Answers) || {};
-        const qs = normalizeLoadedQuestions(rawQ, totalQ, openEnded);
-        const ans = normalizeLoadedAnswers(rawA, qs);
-        // Enforce open-ended positions (last N positions)
-        const textPositions = qs.map((q, i) => (q.type === 'text' ? i : -1)).filter((i) => i >= 0);
-        const textStart = Math.max(0, (totalQ || qs.length) - openEnded);
-        const ok = textPositions.length === openEnded && textPositions.every((pos) => pos >= textStart);
-        if (!ok) {
-          const texts = qs.filter((q) => q.type === 'text').slice(0, openEnded);
-          const nonTexts = qs.filter((q) => q.type !== 'text');
-          const nonLen = Math.max(0, (totalQ || qs.length) - texts.length);
-          const firstPart = nonTexts.slice(0, nonLen);
-          const fixed = [...firstPart, ...texts].slice(0, totalQ || qs.length);
-          const newAns = fixed.map((q) => (q.type === 'text' ? '' : q.type === 'mcq' ? -1 : []));
-          setQuestions(fixed);
-          setAnswers(newAns);
-          setActiveIdx(0);
-        } else {
-          setQuestions(qs);
-          setAnswers(ans);
-          setActiveIdx(0);
-        }
+        setLoading(true);
+        const local = await idbGetTest(id);
+        if (local && local.draft && !cancelled) setDraft(local.draft);
+        await fetchRemote(false);
       } catch (e) {
-        if (!cancelled) setError(e?.response?.data?.message || e.message || 'Failed to load exam');
+        console.error(e); if (!cancelled) setError(e.message || 'Failed to load exam');
+      } finally { if (!cancelled) setLoading(false); }
+    }
+    init();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, token, navigate]);
+
+  const handleReload = async () => {
+    try { setReloading(true); await fetchRemote(true); setSaveMsg('Reloaded from server'); } catch (e) { console.error(e); setSaveMsg(e.message || 'Reload failed'); } finally { setReloading(false); setTimeout(()=> setSaveMsg(''), 3000); }
+  };
+
+  // Derived totals
+  const derived = useMemo(() => {
+    const totalQuestions = draft.sections.reduce((sum, s) => sum + s.questions.length, 0);
+    const totalMarks = draft.sections.reduce((sum, s) => sum + s.questions.reduce((a, q) => a + (parseFloat(q.successMarks) || 0), 0), 0);
+    return { totalQuestions, totalMarks };
+  }, [draft]);
+
+  // Helpers writing to IDB
+  const mutate = async (fn) => {
+    const updated = await idbUpsertDraft(id, fn);
+    setDraft(updated.draft);
+    setDirty(true);
+  };
+
+  const addSection = () => mutate(prev => {
+    const nextId = prev.sections.reduce((m, s) => Math.max(m, s.sectionId || 0), 0) + 1;
+    const updated = { ...prev, sections: [...prev.sections, makeEmptySection(nextId)] };
+    setSelected({ sectionId: nextId, questionNumber: null });
+    return updated;
+  });
+
+  const updateSectionTitle = (sectionId, title) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => s.sectionId === sectionId ? { ...s, title } : s) }));
+  const updateSectionQty = (sectionId, qty) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => s.sectionId === sectionId ? { ...s, questionsToDisplay: qty } : s) }));
+  const deleteSection = (sectionId) => { if (!confirm('Delete section?')) return; mutate(prev => { const remaining = prev.sections.filter(s => s.sectionId !== sectionId); const updated = { ...prev, sections: remaining }; if (selected.sectionId === sectionId) setSelected({ sectionId: remaining[0]?.sectionId || null, questionNumber: null }); return updated; }); };
+  const moveSection = (sectionId, dir) => mutate(prev => {
+    const idx = prev.sections.findIndex(s => s.sectionId === sectionId); if (idx < 0) return prev;
+    const target = dir === 'up' ? idx - 1 : idx + 1; if (target < 0 || target >= prev.sections.length) return prev;
+    const arr = [...prev.sections]; const [sp] = arr.splice(idx, 1); arr.splice(target, 0, sp); return { ...prev, sections: arr };
+  });
+
+  const addQuestion = (sectionId, type) => mutate(prev => ({
+    ...prev, sections: prev.sections.map(s => {
+      if (s.sectionId !== sectionId) return s; const q = makeEmptyQuestion(type); const qs = [...s.questions, { ...q, questionNumber: s.questions.length + 1 }];
+      setSelected({ sectionId, questionNumber: qs.length });
+      return { ...s, questions: qs, questionsToDisplay: Math.max(s.questionsToDisplay, qs.length) };
+    })
+  }));
+  const updateQuestion = (sectionId, questionNumber, patch) => mutate(prev => ({
+    ...prev, sections: prev.sections.map(s => {
+      if (s.sectionId !== sectionId) return s; const qs = s.questions.map(q => q.questionNumber === questionNumber ? { ...q, ...patch } : q); return reindex({ ...s, questions: qs });
+    })
+  }));
+  const deleteQuestion = (sectionId, questionNumber) => { if (!confirm('Delete question?')) return; mutate(prev => ({ ...prev, sections: prev.sections.map(s => { if (s.sectionId !== sectionId) return s; const qs = s.questions.filter(q => q.questionNumber !== questionNumber); const re = reindex({ ...s, questions: qs }); if (selected.sectionId === sectionId) { if (questionNumber === selected.questionNumber) { setSelected({ sectionId, questionNumber: re.questions[0]?.questionNumber || null }); } } return re; }) })); };
+  const moveQuestion = (sectionId, questionNumber, dir) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => { if (s.sectionId !== sectionId) return s; const idx = s.questions.findIndex(q => q.questionNumber === questionNumber); if (idx < 0) return s; const target = dir === 'up' ? idx - 1 : idx + 1; if (target < 0 || target >= s.questions.length) return s; const arr = [...s.questions]; const [q] = arr.splice(idx, 1); arr.splice(target, 0, q); return reindex({ ...s, questions: arr }); }) }));
+  const changeQuestionType = (sectionId, questionNumber, newType) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => { if (s.sectionId !== sectionId) return s; const qs = s.questions.map(q => { if (q.questionNumber !== questionNumber) return q; const fresh = makeEmptyQuestion(newType); return { ...fresh, questionNumber: q.questionNumber }; }); return { ...s, questions: qs }; }) }));
+
+  // JSON editor
+  const openJson = () => { setJsonText(JSON.stringify(draft, null, 2)); setJsonErr(''); setShowJson(true); };
+  const applyJson = () => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (!parsed || typeof parsed !== 'object') throw new Error('Root must be object');
+      if (!Array.isArray(parsed.sections)) parsed.sections = [];
+      parsed.sections = parsed.sections.map((s, i) => reindex({ sectionId: s.sectionId || i + 1, title: s.title || `Section ${i + 1}`, questionsToDisplay: s.questionsToDisplay || (s.questions ? s.questions.length : 0), questions: Array.isArray(s.questions) ? s.questions : [] }));
+      mutate(() => parsed); // mutate will set dirty & persist
+      setShowJson(false);
+    } catch (e) { setJsonErr(e.message); }
+  };
+
+  // Save to server
+  const validate = () => {
+    const errs = [];
+    if (!draft.title || !draft.title.trim()) errs.push('Test title required');
+    draft.sections.forEach((s, si) => {
+      if (!s.title || !s.title.trim()) errs.push(`Section ${si + 1} title required`);
+      if (!s.questions.length) errs.push(`Section ${si + 1} needs at least one question`);
+      s.questions.forEach((q, qi) => {
+        if (!q.questionText || !q.questionText.trim()) errs.push(`Section ${si + 1} Q${qi + 1} text required`);
+        if (q.type === 'mcq') {
+          if (!Array.isArray(q.options) || q.options.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MCQ needs 2+ options`);
+          const nonEmpty = q.options.filter(o=> (o||'').trim().length>0);
+            if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MCQ needs 2+ non-empty options`);
+          if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption >= q.options.length) errs.push(`Section ${si + 1} Q${qi + 1} MCQ correct option invalid`);
+          else if (!q.options[q.correctOption] || !q.options[q.correctOption].trim()) errs.push(`Section ${si + 1} Q${qi + 1} MCQ correct option is empty`);
+        }
+        if (q.type === 'msq') {
+          if (!Array.isArray(q.options) || q.options.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs 2+ options`);
+          const nonEmpty = q.options.filter(o=> (o||'').trim().length>0);
+            if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs 2+ non-empty options`);
+          if (!Array.isArray(q.correctOptions) || !q.correctOptions.length) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs at least one correct option`);
+          else if (q.correctOptions.some(ci => ci <0 || ci >= q.options.length)) errs.push(`Section ${si + 1} Q${qi + 1} MSQ correct option index out of range`);
+          else if (q.correctOptions.some(ci => !q.options[ci] || !q.options[ci].trim())) errs.push(`Section ${si + 1} Q${qi + 1} MSQ has correct option with empty text`);
+        }
+      });
+    });
+    return errs;
+  };
+
+  const saveRemote = async () => {
+    setSaving(true); setSaveMsg('');
+    try {
+      const errs = validate();
+      if (errs.length) { setSaveMsg(`Validation: ${errs[0]} (+${errs.length - 1} more)`); setSaving(false); return; }
+      const transform = (t) => ({
+        title: t.title,
+        sections: t.sections.map(s => ({
+          sectionId: s.sectionId,
+            title: s.title,
+            questionsToDisplay: s.questionsToDisplay,
+            questions: s.questions.map(q => {
+              const base = {
+                questionNumber: q.questionNumber,
+                type: q.type === 'open' ? 'open-ended' : q.type,
+                questionText: q.questionText,
+                successMarks: q.successMarks,
+              };
+              if (q.type === 'open') {
+                return {
+                  ...base,
+                  failureMarks: q.failureMarks ?? 0,
+                  modelAnswer: q.modelAnswer || ''
+                };
+              }
+              if (q.type === 'msq') {
+                return {
+                  ...base,
+                  options: q.options,
+                  // convert 0-based -> 1-based for persistence
+                  correctOptions: Array.isArray(q.correctOptions) ? q.correctOptions.filter(v=> typeof v==='number' && v>=0).map(v=> v+1) : [],
+                  failureMarks: q.failureMarks ?? -1
+                };
+              }
+              // mcq
+              return {
+                ...base,
+                options: q.options,
+                // convert 0-based -> 1-based; if unset (-1) keep as -1 to signal invalid until user fixes
+                correctOption: typeof q.correctOption === 'number' && q.correctOption >= 0 ? (q.correctOption + 1) : -1,
+                failureMarks: q.failureMarks ?? -1
+              };
+            })
+        }))
+      });
+      const payload = { test_id: Number(id), test: transform(draft) };
+      await apiPut('/api/test/update-que-ans', payload, { token });
+      setSaveMsg('Saved to server');
+      setDirty(false);
+    } catch (e) {
+      console.error(e); setSaveMsg(e?.response?.data?.message || 'Save failed');
+    } finally { setSaving(false); setTimeout(() => setSaveMsg(''), 4000); }
+  };
+
+  if (loading) return <div className="container py-4">Loading…</div>;
+  if (error) return <div className="container py-4"><div className="alert alert-danger">{error}</div></div>;
+
+  // Local image uploader modal (stores base64 images in localStorage)
+  function UploaderModal({ onClose, onInsert, hasQuestionSelected }) {
+    // Store remote uploads metadata: {id,name,url,ts}
+    const [items, setItems] = useState(() => {
+      try { return JSON.parse(localStorage.getItem('qs-uploaded-images') || '[]'); } catch { return []; }
+    });
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const [uploadingNames, setUploadingNames] = useState([]);
+
+    const persist = (arr) => {
+      localStorage.setItem('qs-uploaded-images', JSON.stringify(arr));
+      setItems(arr);
+    };
+
+    const handleFiles = async (e) => {
+      const files = Array.from(e.target.files||[]);
+      if (!files.length) return;
+      setBusy(true); setErr('');
+      try {
+        for (const f of files) {
+          setUploadingNames(prev => [...prev, f.name]);
+          const form = new FormData();
+          form.append('file', f);
+          try {
+            const res = await apiPost('/api/upload-image', form, { token, headers: { 'Content-Type': 'multipart/form-data' }});
+            const data = res?.data;
+            if (data && data.url) {
+              const record = { id: Date.now().toString()+Math.random().toString(36).slice(2), name: f.name, url: data.url, filename: data.filename, ts: Date.now() };
+              persist([record, ...items].slice(0,300));
+            }
+          } catch (ex) {
+            console.error('Upload failed', ex);
+            setErr(ex?.response?.data?.message || ex.message || 'Upload failed');
+          } finally {
+            setUploadingNames(prev => prev.filter(n => n!==f.name));
+          }
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        setBusy(false);
+        e.target.value='';
       }
     };
-    load();
-    return () => { cancelled = true; };
-  }, [id, token]);
 
-  useEffect(() => {
-    try {
-      const qObj = { questions_json: buildKeyedQuestionsJson(questions) };
-      const aObj = { answer_json: buildKeyedAnswersJson(questions, answers) };
-      setQJson(JSON.stringify(qObj, null, 2));
-      setAJson(JSON.stringify(aObj, null, 2));
-    } catch {
-      // ignore
-    }
-  }, [questions, answers]);
+    const removeItem = (id) => {
+      const next = items.filter(i=> i.id!==id);
+      persist(next);
+    };
 
-  const updateQuestion = (idx, patch) => {
-    setQuestions((prev) => {
-      const next = prev.slice();
-      const cur = { ...next[idx] };
-      // Enforce type constraints for open-ended region and toggle MCQ/MSQ
-      if (typeof patch.type !== 'undefined') {
-        const textStart = Math.max(0, questions.length - openEndedCount);
-        if (idx >= textStart) patch.type = 'text';
-        if (patch.type === 'text') {
-          cur.options = [];
-        } else {
-          if (!Array.isArray(cur.options) || cur.options.length === 0) cur.options = defaultOptions();
-        }
-        // Reset answers on type change
-        setAnswers((prevA) => {
-          const a = prevA.slice();
-          a[idx] = patch.type === 'text' ? '' : patch.type === 'mcq' ? -1 : [];
-          return a;
-        });
-  // Apply the new type (will be overridden to 'text' below if in last-N)
-  cur.type = patch.type;
-      }
-      if (typeof patch.text !== 'undefined') cur.text = patch.text;
-      if (typeof patch.marks !== 'undefined') cur.marks = Number(patch.marks) || 1;
-      if (typeof patch.options !== 'undefined') cur.options = patch.options;
-  if (idx >= Math.max(0, questions.length - openEndedCount)) cur.type = 'text';
-      next[idx] = cur;
-      return next;
-    });
+    const copyLink = (url) => { navigator.clipboard.writeText(url).catch(()=>{}); };
+    const copyMarkdown = (name,url) => { navigator.clipboard.writeText(`![${name}](${url})`).catch(()=>{}); };
+
+    return (
+      
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:2500, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div className="surface p-3 rounded-3 d-flex flex-column" style={{ width:'min(700px,95vw)', maxHeight:'92vh', border:'1px solid var(--border)' }}>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <h3 className="h6 m-0">Uploaded Images (Remote links)</h3>
+            <div className="d-flex gap-2">
+              <label className="btn btn-sm btn-outline-primary mb-0">
+                {busy ? 'Uploading…' : 'Upload'}
+                <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={handleFiles} />
+              </label>
+              <button className="btn btn-sm btn-outline-secondary" onClick={onClose}>Close</button>
+            </div>
+          </div>
+          {err && <div className="alert alert-danger py-1 small mb-2">{err}</div>}
+          <div className="small mb-2" style={{ color:'var(--muted)' }}>{items.length} item(s). Only names & URLs shown (images not rendered).</div>
+          <div className="overflow-auto" style={{ flex:1, border:'1px solid var(--border)', borderRadius:6 }}>
+            <table className="table table-sm table-borderless align-middle mb-0" style={{ fontSize:12 }}>
+              <thead style={{ position:'sticky', top:0, background:'var(--bs-body-bg)' }}>
+                <tr><th style={{ width:'40%' }}>Name</th><th>Filename</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {items.map(it => (
+                  <tr key={it.id}>
+                    <td className="text-truncate" title={it.name}>{it.name}</td>
+                    <td className="text-truncate" title={it.filename || it.url}>{(it.filename||'').slice(0,40) || '—'}</td>
+                    <td className="d-flex flex-wrap gap-1">
+                      <button className="btn btn-xs btn-outline-secondary" onClick={()=> copyLink(it.url)}>Copy Link</button>
+                      <button className="btn btn-xs btn-outline-secondary" onClick={()=> copyMarkdown(it.name, it.url)}>MD</button>
+                      {hasQuestionSelected && <button className="btn btn-xs btn-outline-primary" onClick={()=> onInsert(it.url)}>Insert</button>}
+                      <button className="btn btn-xs btn-outline-danger" onClick={()=> removeItem(it.id)}>Del</button>
+                    </td>
+                  </tr>
+                ))}
+                {uploadingNames.map(n => (
+                  <tr key={n}><td colSpan={3} className="text-muted">Uploading {n}…</td></tr>
+                ))}
+                {items.length===0 && uploadingNames.length===0 && <tr><td colSpan={3} className="text-muted">No images uploaded yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="small mt-2" style={{ color:'var(--muted)' }}>Use Link or MD buttons to copy, Insert to append to selected question text.</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Generic image insertion (question or option)
+  const insertImage = (url) => {
+    if (!selected.sectionId || !selected.questionNumber) return;
+    mutate(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => {
+        if (s.sectionId !== selected.sectionId) return s;
+        return {
+          ...s,
+          questions: s.questions.map(q => {
+            if (q.questionNumber !== selected.questionNumber) return q;
+            const md = `![image](${url})`;
+            if (uploaderTarget.kind === 'option' && uploaderTarget.optionIndex != null) {
+              const opts = [...q.options];
+              if (opts[uploaderTarget.optionIndex] != null) {
+                opts[uploaderTarget.optionIndex] = (opts[uploaderTarget.optionIndex] ? opts[uploaderTarget.optionIndex] + ' ' : '') + md;
+              }
+              return { ...q, options: opts };
+            }
+            return { ...q, questionText: (q.questionText ? q.questionText + '\n' : '') + md };
+          })
+        };
+      })
+    }));
   };
-
-  const addOption = (idx) => {
-    setQuestions((prev) => {
-      const next = prev.slice();
-      const q = { ...next[idx] };
-      const opts = Array.isArray(q.options) ? q.options.slice() : [];
-      opts.push(`Option ${opts.length + 1}`);
-      q.options = opts;
-      next[idx] = q;
-      return next;
-    });
-  };
-
-  const removeOption = (idx, optIdx) => {
-    setQuestions((prev) => {
-      const next = prev.slice();
-      const q = { ...next[idx] };
-      const opts = Array.isArray(q.options) ? q.options.slice() : [];
-      if (optIdx >= 0 && optIdx < opts.length) opts.splice(optIdx, 1);
-      q.options = opts;
-      next[idx] = q;
-      return next;
-    });
-    setAnswers((prev) => {
-      const next = prev.slice();
-      const a = next[idx];
-      const q = questions[idx];
-      if (q?.type === 'mcq') {
-        if (a === optIdx) next[idx] = -1; // cleared selection
-        else if (typeof a === 'number' && a > optIdx) next[idx] = a - 1; // reindex
-      } else if (q?.type === 'msq') {
-        const arr = Array.isArray(a) ? a.slice() : [];
-        const mapped = arr.filter((x) => x !== optIdx).map((x) => (x > optIdx ? x - 1 : x));
-        next[idx] = mapped;
-      }
-      return next;
-    });
-  };
-
-  const moveQuestion = (from, to) => {
-    if (to < 0 || to >= questions.length || from === to) return;
-    const fromIsText = questions[from]?.type === 'text';
-    const textStart = Math.max(0, questions.length - openEndedCount);
-    const toInTextRegion = to >= textStart;
-    if (fromIsText && !toInTextRegion) {
-      setError(openEndedCount > 0 ? `Open-ended questions must stay in the last ${openEndedCount} positions.` : 'Cannot move open-ended out of region.');
-      return;
-    }
-    if (!fromIsText && toInTextRegion) {
-      setError(openEndedCount > 0 ? `Only open-ended can be placed in the last ${openEndedCount} positions.` : 'Cannot place non-open-ended in open-ended region.');
-      return;
-    }
-    setQuestions((prev) => {
-      const arr = prev.slice();
-      const [m] = arr.splice(from, 1);
-      arr.splice(to, 0, m);
-      return arr;
-    });
-    setAnswers((prev) => {
-      const arr = prev.slice();
-      const [m] = arr.splice(from, 1);
-      arr.splice(to, 0, m);
-      return arr;
-    });
-    setActiveIdx(to);
-  };
-
-  const applyJson = () => {
-    setJsonError('');
-    try {
-      const qObj = safeParseJSON(qJson, {});
-      const aObj = safeParseJSON(aJson, {});
-      const keyedQ = qObj?.questions_json ?? qObj?.Questions ?? qObj?.questions ?? qObj;
-      const keyedA = aObj?.answer_json ?? aObj?.Answers ?? aObj?.answers ?? aObj;
-      const normalizedQs = normalizeLoadedQuestions(keyedQ, questions.length || exam?.number_of_questions || 0, openEndedCount);
-  const total = normalizedQs.length;
-  const textPositions = normalizedQs.map((q, i) => (q.type === 'text' ? i : -1)).filter((i) => i >= 0);
-  const textStart = Math.max(0, total - openEndedCount);
-  const ok = textPositions.length === openEndedCount && textPositions.every((pos) => pos >= textStart);
-  if (!ok) throw new Error(`Open-ended questions must stay in the last ${openEndedCount} positions (positions ${textStart + 1}–${total}).`);
-      const normalizedAns = normalizeLoadedAnswers(keyedA, normalizedQs);
-      setQuestions(normalizedQs);
-      setAnswers(normalizedAns);
-      setActiveIdx(0);
-    } catch (err) {
-      setJsonError(err?.message || 'Invalid JSON');
-    }
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setError('');
-    try {
-      const qTexts = questions.map((q) => String(q.text || '').trim());
-      const ansStrings = answers.map((a, idx) => {
-        const q = questions[idx];
-        if (q.type === 'text') return String(a || '');
-        if (q.type === 'mcq') {
-          const i = typeof a === 'number' ? a : -1;
-          return i >= 0 ? String(q.options?.[i] || '') : '';
-        }
-        const arr = Array.isArray(a) ? a : [];
-        const texts = arr.map((i) => q.options?.[i]).filter(Boolean);
-        return texts.join(', ');
-      });
-      // Save keyed JSON to persist options/types, and include arrays for compatibility
-      const keyedQ = buildKeyedQuestionsJson(questions);
-      const keyedA = buildKeyedAnswersJson(questions, answers);
-      const qOut = { ...keyedQ, questions: qTexts };
-      const aOut = { ...keyedA, answers: ansStrings };
-      const payload = {
-        test_id: Number(id),
-        questions_json: JSON.stringify(qOut),
-        answer_json: JSON.stringify(aOut),
-      };
-      await apiPut('/api/test/update-que-ans', payload, { token });
-      navigate('/exam/manageExam');
-    } catch (e) {
-      setError(e?.response?.data?.message || e.message || 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const activeQ = questions[activeIdx];
 
   return (
-    <div className="container py-3">
-      <h1 className="h5 mb-2">Edit Exam</h1>
-      {error && <div className="alert alert-danger py-2">{error}</div>}
-      {loading ? (
-        <div className="text-muted">Loading…</div>
-      ) : (
-        <>
-          <div className="row mt-2">
-            <div className="col-md-3">
-              <div className="surface rounded-3 p-2" style={{ border: '1px solid var(--border)' }}>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <div className="fw-semibold">Questions</div>
-                  <small style={{ color: 'var(--muted)' }}>{questions.length}</small>
-                </div>
-                <div className="list-group">
-                  {questions.map((item, idx) => {
-                    const isActive = idx === activeIdx;
-                    const isOver = idx === dragOverIdx && dragIdx !== null && dragIdx !== idx;
-                    return (
-                      <button
-                        key={idx}
-                        className={`list-group-item list-group-item-action ${isActive ? 'active' : ''}`}
-                        onClick={() => setActiveIdx(idx)}
-                        onDragOver={(e) => { e.preventDefault(); if (dragOverIdx !== idx) setDragOverIdx(idx); }}
-                        onDragLeave={() => setDragOverIdx((prev) => (prev === idx ? null : prev))}
-                        onDrop={(e) => { e.preventDefault(); const from = dragIdx; const to = idx; if (typeof from === 'number' && from !== to) moveQuestion(from, to); setDragIdx(null); setDragOverIdx(null); }}
-                        style={{ cursor: 'pointer', background: isOver ? 'color-mix(in srgb, var(--bg-elev) 80%, #0d6efd 20%)' : undefined, transition: 'background 120ms ease' }}
-                      >
-                        <div className="d-flex align-items-center gap-2">
-                          <span
-                            title="Drag to reorder"
-                            aria-label="Drag to reorder"
-                            role="button"
-                            draggable
-                            onDragStart={(e) => {
-                              setDragIdx(idx);
-                              e.stopPropagation();
-                              e.dataTransfer.effectAllowed = 'move';
-                              try { e.dataTransfer.setData('text/plain', String(idx)); } catch { /* ignore */ }
-                              try {
-                                const btn = e.currentTarget.closest('button');
-                                if (btn && typeof e.dataTransfer.setDragImage === 'function') {
-                                  const clone = btn.cloneNode(true);
-                                  clone.style.width = `${btn.offsetWidth}px`;
-                                  clone.style.boxSizing = 'border-box';
-                                  clone.style.position = 'absolute';
-                                  clone.style.top = '-10000px';
-                                  clone.style.left = '-10000px';
-                                  clone.style.pointerEvents = 'none';
-                                  clone.style.opacity = '0.85';
-                                  document.body.appendChild(clone);
-                                  dragGhostRef.current = clone;
-                                  e.dataTransfer.setDragImage(clone, 12, 12);
-                                }
-                              } catch { /* ignore */ }
-                            }}
-                            onDragEnd={(e) => {
-                              e.stopPropagation();
-                              setDragIdx(null);
-                              setDragOverIdx(null);
-                              if (dragGhostRef.current) { try { document.body.removeChild(dragGhostRef.current); } catch { /* ignore */ } dragGhostRef.current = null; }
-                            }}
-                            style={{ cursor: 'grab', userSelect: 'none', color: 'var(--muted)' }}
-                          >
-                            ⠿
-                          </span>
-                          <span>Q{idx + 1} • {item.type.toUpperCase()}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="d-flex gap-2 mt-2">
-                  <button className="btn btn-sm btn-outline-secondary" onClick={() => moveQuestion(activeIdx, activeIdx - 1)} disabled={activeIdx <= 0}>Up</button>
-                  <button className="btn btn-sm btn-outline-secondary" onClick={() => moveQuestion(activeIdx, activeIdx + 1)} disabled={activeIdx >= questions.length - 1}>Down</button>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-9">
-              <div className="surface rounded-3 p-3" style={{ border: '1px solid var(--border)' }}>
-                {activeQ ? (
-                  <div>
-                    <div className="row g-3">
-                      <div className="col-md-6">
-                        <label className="form-label">Question text</label>
-                        <textarea className="form-control" rows={3} value={activeQ.text} onChange={(e) => updateQuestion(activeIdx, { text: e.target.value })} />
-                      </div>
-                      <div className="col-md-3">
-                        <label className="form-label">Type</label>
-                        {activeIdx >= Math.max(0, questions.length - openEndedCount) ? (
-                          <div>
-                            <div className="form-control" style={{ background: 'var(--bg-elev)', color: 'var(--muted)' }}>
-                              Text (fixed)
-                            </div>
-                            <small className="text-muted">Last {openEndedCount} positions are Text</small>
-                          </div>
-                        ) : (
-                          <>
-                            <select
-                              className="form-select"
-                              value={activeQ.type === 'text' ? 'mcq' : activeQ.type}
-                              onChange={(e) => updateQuestion(activeIdx, { type: e.target.value })}
-                            >
-                              <option value="mcq">MCQ</option>
-                              <option value="msq">MSQ</option>
-                            </select>
-                            <small className="text-muted">Objective can be MCQ/MSQ</small>
-                          </>
-                        )}
-                      </div>
-                      <div className="col-md-3">
-                        <label className="form-label">Marks</label>
-                        <input type="number" min={0} className="form-control" value={activeQ.marks ?? 1} onChange={(e) => updateQuestion(activeIdx, { marks: Number(e.target.value) })} />
-                      </div>
-                    </div>
-
-                    {activeQ.type !== 'text' && (
-                      <div className="mt-3">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <label className="form-label m-0">Options</label>
-                          <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => addOption(activeIdx)}>Add option</button>
-                        </div>
-                        {(activeQ.options || []).map((opt, oi) => (
-                          <div key={oi} className="d-flex align-items-center gap-2 mt-2">
-                            <input className="form-control" value={opt} onChange={(e) => {
-                              const val = e.target.value;
-                              setQuestions((prev) => { const copy = prev.slice(); const opts = (copy[activeIdx].options || []).slice(); opts[oi] = val; copy[activeIdx] = { ...copy[activeIdx], options: opts }; return copy; });
-                            }} />
-                            <button className="btn btn-outline-danger" type="button" onClick={() => removeOption(activeIdx, oi)}>Remove</button>
-                            {activeQ.type === 'mcq' ? (
-                              <div className="form-check ms-2">
-                                <input className="form-check-input" type="radio" name={`mcq-${activeIdx}`} checked={answers[activeIdx] === oi} onChange={() => setAnswers((prev) => { const copy = prev.slice(); copy[activeIdx] = oi; return copy; })} />
-                              </div>
-                            ) : (
-                              <div className="form-check ms-2">
-                                <input className="form-check-input" type="checkbox" checked={Array.isArray(answers[activeIdx]) && answers[activeIdx].includes(oi)} onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  setAnswers((prev) => { const copy = prev.slice(); const arr = Array.isArray(copy[activeIdx]) ? copy[activeIdx].slice() : []; if (checked) { if (!arr.includes(oi)) arr.push(oi); } else { const pos = arr.indexOf(oi); if (pos >= 0) arr.splice(pos, 1); } copy[activeIdx] = arr; return copy; });
-                                }} />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {activeQ.type === 'text' && (
-                      <div className="mt-3">
-                        <label className="form-label">Reference answer (optional)</label>
-                        <textarea className="form-control" rows={3} value={typeof answers[activeIdx] === 'string' ? answers[activeIdx] : ''} onChange={(e) => setAnswers((prev) => { const copy = prev.slice(); copy[activeIdx] = e.target.value; return copy; })} />
-                      </div>
-                    )}
-
-                    <div className="d-flex gap-2 mt-4">
-                      <button className="btn btn-success" type="button" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save to server'}</button>
-                      <button className="btn btn-outline-secondary" type="button" onClick={() => navigate('/exam/manageExam')} disabled={saving}>Reset</button>
-                    </div>
+    <div style={{ color: 'var(--text)' }}>
+      <Navbar />
+      <div className="exam-layout">
+      {/* Sidebar */}
+      <aside className="exam-sidebar">
+        <div className="d-flex align-items-center justify-content-between mb-1">
+          <h2 className="h6 m-0">Exam #{id}</h2>
+          <button className="btn btn-sm btn-outline-primary" onClick={addSection}>+ Sec</button>
+        </div>
+        <div className="small mb-2" style={{ color: 'var(--muted)' }}>{derived.totalQuestions} questions • {derived.totalMarks} marks {dirty && <span className="ms-1">(draft)</span>}</div>
+        <div className="vstack gap-2 section-list">
+            {draft.sections.map(sec => (
+              <div key={sec.sectionId} className="border rounded-3" style={{ borderColor: 'var(--border)' }}>
+                <div className={`d-flex align-items-center justify-content-between px-2 py-1 ${selected.sectionId===sec.sectionId && selected.questionNumber==null ? 'bg-primary text-white rounded-top-3' : ''}`}
+                     role="button"
+                     onClick={()=> setSelected({ sectionId: sec.sectionId, questionNumber: null })}>
+                  <span className="text-truncate" style={{ fontSize: '0.8rem' }}>{sec.title || `Section ${sec.sectionId}`}</span>
+                  <div className="d-flex gap-1">
+                    <button className="btn btn-xs btn-outline-secondary py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e)=> { e.stopPropagation(); addQuestion(sec.sectionId,'mcq'); }}>+Q</button>
+                    <button className="btn btn-xs btn-outline-danger py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e)=> { e.stopPropagation(); deleteSection(sec.sectionId); }}>✕</button>
                   </div>
-                ) : (
-                  <div className="text-muted">Select a question to edit</div>
+                </div>
+                {sec.questions.length>0 && (
+                  <div className="list-group list-group-flush">
+                    {sec.questions.map(q => (
+                      <button key={q.questionNumber} className={`list-group-item list-group-item-action py-1 px-2 ${selected.sectionId===sec.sectionId && selected.questionNumber===q.questionNumber ? 'active' : ''}`}
+                        style={{ fontSize: '0.7rem' }} onClick={()=> setSelected({ sectionId: sec.sectionId, questionNumber: q.questionNumber })}>
+                        Q{q.questionNumber}: {(q.questionText||'').slice(0,30) || <span className="text-muted">(empty)</span>}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
+            ))}
+            {draft.sections.length===0 && <div className="text-muted small">No sections</div>}
+        </div>
+        <div className="mt-auto d-flex flex-column gap-2 pt-2 border-top" style={{ borderColor:'var(--border)' }}>
+          <button className="btn btn-sm btn-outline-secondary" onClick={()=> { setJsonText(JSON.stringify(draft,null,2)); setShowJson(true); }}>JSON</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={()=> { setUploaderTarget({ kind:'question', optionIndex:null }); setUploader(true); }}>Images</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={()=> navigate(`/exam/manageCandidates?test_id=${encodeURIComponent(id)}`)}>Candidates</button>
+          <button className="btn btn-sm btn-outline-secondary" disabled={reloading} onClick={handleReload}>{reloading? 'Reloading…':'Reload Server'}</button>
+          <button className="btn btn-sm btn-primary" disabled={saving || !dirty} onClick={saveRemote}>{saving? 'Saving…' : 'Save Server'}</button>
+          {saveMsg && <div className="small" style={{ color: /fail|error/i.test(saveMsg)? 'var(--bs-danger)' : 'var(--muted)' }}>{saveMsg}</div>}
+        </div>
+      </aside>
+      {/* Main editor */}
+      <div className="exam-main">
+          <div className="surface rounded-3 p-3 mb-3" style={{ border: '1px solid var(--border)' }}>
+            <label className="form-label small mb-1">Test Title</label>
+            <input className="form-control form-control-sm" value={draft.title} onChange={(e)=> mutate(prev => ({ ...prev, title: e.target.value }))} />
           </div>
-
-          <div className="surface rounded-3 p-3 mt-3" style={{ border: '1px solid var(--border)' }}>
-            <h2 className="h6 mb-3">Advanced JSON (optional)</h2>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">questions_json</label>
-                <textarea className="form-control" rows={14} value={qJson} onChange={(e) => setQJson(e.target.value)} />
-                <small className="text-muted">Use keys q1, q2, … with fields: type (MCQ/MSQ/Text), Question, marks, options (for MCQ/MSQ).</small>
+          {/* Section level editing when section selected and no question selected */}
+          {selected.sectionId && !selected.questionNumber && (() => {
+            const sec = draft.sections.find(s => s.sectionId===selected.sectionId);
+            if (!sec) return null;
+            return (
+              <div className="surface rounded-3 p-3 mb-3" style={{ border:'1px solid var(--border)' }}>
+                <h3 className="h6 mb-3">Edit Section {sec.sectionId}</h3>
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label small">Title</label>
+                    <input className="form-control form-control-sm" value={sec.title} onChange={(e)=> updateSectionTitle(sec.sectionId, e.target.value)} />
+                  </div>
+                  <div className="col-md-3">
+                    <label className="form-label small">Questions To Display</label>
+                    <input type="number" min={0} className="form-control form-control-sm" value={sec.questionsToDisplay} onChange={(e)=> updateSectionQty(sec.sectionId, parseInt(e.target.value||'0',10))} />
+                  </div>
+                  <div className="col-md-3 d-flex align-items-end">
+                    <div className="btn-group btn-group-sm w-100">
+                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s=> s.sectionId===sec.sectionId)===0} onClick={()=> moveSection(sec.sectionId,'up')}>↑</button>
+                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s=> s.sectionId===sec.sectionId)===draft.sections.length-1} onClick={()=> moveSection(sec.sectionId,'down')}>↓</button>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Dropdown>
+                    <Dropdown.Toggle size="sm" variant="outline-primary">Add Question</Dropdown.Toggle>
+                    <Dropdown.Menu>
+                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'mcq')}>MCQ</Dropdown.Item>
+                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'msq')}>MSQ</Dropdown.Item>
+                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'open')}>Open</Dropdown.Item>
+                    </Dropdown.Menu>
+                  </Dropdown>
+                </div>
               </div>
-              <div className="col-md-6">
-                <label className="form-label">answer_json</label>
-                <textarea className="form-control" rows={14} value={aJson} onChange={(e) => setAJson(e.target.value)} />
-                <small className="text-muted">For MCQ: {'{ option: number }'} • For MSQ: {'{ option: [numbers] }'} • For Text: {}.</small>
+            );
+          })()}
+          {/* Question editor */}
+          {selected.sectionId && selected.questionNumber && (() => {
+            const sec = draft.sections.find(s => s.sectionId===selected.sectionId); if (!sec) return null;
+            const q = sec.questions.find(q => q.questionNumber===selected.questionNumber); if (!q) return null;
+            return (
+              <div className="surface rounded-3 p-3" style={{ border:'1px solid var(--border)' }}>
+                <div className="d-flex justify-content-between align-items-start mb-3">
+                  <h3 className="h6 m-0">Section {sec.sectionId} • Question {q.questionNumber}</h3>
+                  <div className="d-flex gap-2">
+                    <select className="form-select form-select-sm" value={q.type} onChange={(e)=> changeQuestionType(sec.sectionId, q.questionNumber, e.target.value)}>
+                      <option value="mcq">MCQ</option>
+                      <option value="msq">MSQ</option>
+                      <option value="open">Open</option>
+                    </select>
+                    <div className="btn-group btn-group-sm">
+                      <button className="btn btn-outline-secondary" disabled={q.questionNumber===1} onClick={()=> moveQuestion(sec.sectionId, q.questionNumber,'up')}>↑</button>
+                      <button className="btn btn-outline-secondary" disabled={q.questionNumber===sec.questions.length} onClick={()=> moveQuestion(sec.sectionId, q.questionNumber,'down')}>↓</button>
+                    </div>
+                    <button className="btn btn-sm btn-outline-danger" onClick={()=> deleteQuestion(sec.sectionId, q.questionNumber)}>Delete</button>
+                  </div>
+                </div>
+                <div className="row g-3 mb-3">
+                  <div className="col-md-8">
+                    <div className="d-flex justify-content-between align-items-center">
+                      <label className="form-label small mb-0">Question Text</label>
+                      <button type="button" className="btn btn-xs btn-outline-secondary" onClick={()=> { setUploaderTarget({ kind:'question', optionIndex:null }); setUploader(true); }}>Insert Image</button>
+                    </div>
+                    <textarea className="form-control" rows={3} value={q.questionText} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ questionText: e.target.value })} />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label small">+ Marks</label>
+                    <input type="number" className="form-control form-control-sm" value={q.successMarks} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ successMarks: parseFloat(e.target.value||'0') })} />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label small">- Marks</label>
+                    <input type="number" className="form-control form-control-sm" value={q.failureMarks} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ failureMarks: parseFloat(e.target.value||'0') })} />
+                  </div>
+                </div>
+                {q.type==='open' && (
+                  <div className="mb-3">
+                    <label className="form-label small">Model Answer</label>
+                    <textarea className="form-control" rows={2} value={q.modelAnswer||''} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ modelAnswer: e.target.value })} />
+                  </div>
+                )}
+                {(q.type==='mcq' || q.type==='msq') && (
+                  <div className="mb-3">
+                    <label className="form-label small d-block mb-2">Options</label>
+                    <div className="vstack gap-2">
+                      {q.options.map((opt,oIdx)=>(
+                        <div key={oIdx} className="d-flex gap-2 align-items-center">
+                          <div className="flex-grow-1 d-flex gap-1">
+                            <input className="form-control form-control-sm" value={opt} placeholder={`Option ${oIdx+1}`} onChange={(e)=> { const newOpts=[...q.options]; newOpts[oIdx]=e.target.value; updateQuestion(sec.sectionId,q.questionNumber,{ options:newOpts }); }} />
+                            <button type="button" className="btn btn-xs btn-outline-secondary" title="Insert image link" onClick={()=> { setUploaderTarget({ kind:'option', optionIndex:oIdx }); setUploader(true); }}>Img</button>
+                          </div>
+                          {q.type==='mcq' && (
+                            <input type="radio" name={`correct-${sec.sectionId}-${q.questionNumber}`} checked={q.correctOption===oIdx} onChange={()=> updateQuestion(sec.sectionId, q.questionNumber,{ correctOption:oIdx })} />
+                          )}
+                          {q.type==='msq' && (
+                            <input type="checkbox" checked={Array.isArray(q.correctOptions)&&q.correctOptions.includes(oIdx)} onChange={(e)=> { let next = Array.isArray(q.correctOptions)? [...q.correctOptions]:[]; if(e.target.checked){ if(!next.includes(oIdx)) next.push(oIdx);} else { next = next.filter(i=> i!==oIdx); } updateQuestion(sec.sectionId, q.questionNumber,{ correctOptions: next }); }} />
+                          )}
+                          {q.options.length > 2 && (
+                            <button className="btn btn-xs btn-outline-danger" title="Remove option" onClick={()=> {
+                              const newOpts = q.options.filter((_,i)=> i!==oIdx);
+                              let patch = { options: newOpts };
+                              if (q.type==='mcq' && q.correctOption === oIdx) {
+                                patch.correctOption = -1; // unset
+                              } else if (q.type==='mcq' && q.correctOption > oIdx) {
+                                patch.correctOption = q.correctOption - 1; // shift after removal
+                              }
+                              if (q.type==='msq') {
+                                if (Array.isArray(q.correctOptions)) {
+                                  let next = q.correctOptions.filter(ci=> ci!==oIdx).map(ci=> ci>oIdx? ci-1: ci);
+                                  patch.correctOptions = next;
+                                }
+                              }
+                              updateQuestion(sec.sectionId, q.questionNumber, patch);
+                            }}>✕</button>
+                          )}
+                        </div>
+                      ))}
+                      <div>
+                        <button className="btn btn-xs btn-outline-primary" onClick={()=> {
+                          const newOpts=[...q.options, ''];
+                          updateQuestion(sec.sectionId, q.questionNumber,{ options:newOpts });
+                        }}>+ Add Option</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Future: explanations, tags, difficulty */}
+              </div>
+            );
+          })()}
+        </div>{/* end exam-main */}
+      </div>{/* end exam-layout */}
+      {showJson && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="surface p-3 rounded-3" style={{ width: 'min(900px,94vw)', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h3 className="h6 m-0">Raw JSON Draft</h3>
+              <div className="d-flex gap-2">
+                <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowJson(false)}>Close</button>
+                <button className="btn btn-sm btn-primary" onClick={applyJson}>Apply</button>
               </div>
             </div>
-            {jsonError && <div className="alert alert-warning mt-2 py-2">{jsonError}</div>}
-            <div className="d-flex gap-2 mt-3">
-              <button className="btn btn-primary" type="button" onClick={applyJson} disabled={saving}>Apply JSON</button>
-            </div>
+            {jsonErr && <div className="alert alert-danger py-1 small mb-2">{jsonErr}</div>}
+            <textarea className="form-control flex-grow-1" style={{ fontFamily: 'monospace', fontSize: 12, minHeight: 300 }} value={jsonText} onChange={(e) => { setJsonText(e.target.value); setJsonErr(''); }} />
+            <div className="small mt-2" style={{ color: 'var(--muted)' }}>Edit the full structure. Ensure sections[].questions[] conform to expected shapes.</div>
           </div>
-        </>
+        </div>
+      )}
+      {uploader && (
+        <UploaderModal
+          onClose={()=> setUploader(false)}
+          onInsert={(url)=> { insertImage(url); setUploader(false); }}
+          hasQuestionSelected={!!(selected.sectionId && selected.questionNumber)}
+        />
       )}
     </div>
   );

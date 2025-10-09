@@ -1,7 +1,7 @@
 # QuantumScholar
 
 <p align="center">
-   <img src="assets/Qubitopia-4096x2048.png" alt="Qubitopia Logo" width="400"/>
+   <img src="src/assets/Qubitopia-4096x2048.png" alt="Qubitopia Logo" width="400"/>
 </p>
 
 
@@ -31,30 +31,3 @@
 - Secure user authentication
 - Scalable for institutions and organizations
 - Detailed reporting and analytics
-
-## Project Structure
-
-- `frontend/` — Web client for users and proctors
-- `server/` — Backend API, authentication, payment, and database logic
-
-## Getting Started
-
-1. Clone the repository:
-
-   ```sh
-   git clone https://github.com/Qubitopia/QuantumScholar.git
-
-   cd QuantumScholar
-   ```
-
-2. Copy the environment template and update your configuration:
-
-   ```sh
-   cp template.env .env
-   # Edit .env and fill in the required values
-   ```
-
-3. Start the application using Docker Compose:
-   ```sh
-   docker compose up
-   ```

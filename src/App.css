@@ -190,3 +190,37 @@ input::placeholder, textarea::placeholder {
 	color: var(--text) !important;
 	border-color: var(--border) !important;
 }
+
+/* Exam editor layout */
+.exam-layout {
+	display: flex;
+ 	min-height: calc(100vh - 0px);
+ 	width: 100%;
+ 	gap: 0;
+}
+.exam-sidebar {
+ 	position: sticky;
+ 	top: 0;
+ 	align-self: flex-start;
+ 	display: flex;
+ 	flex-direction: column;
+ 	width: 280px;
+ 	max-height: 100vh;
+ 	padding: 0.85rem 0.9rem;
+ 	background: var(--bg-elev);
+ 	border-right: 1px solid var(--border);
+}
+.exam-sidebar .section-list {
+ 	flex: 1;
+ 	overflow-y: auto;
+ 	padding-right: 2px;
+}
+.exam-main {
+ 	flex: 1;
+ 	padding: 1rem 1.25rem 2rem;
+ 	min-width: 0; /* allow shrink */
+}
+@media (max-width: 900px) {
+ 	.exam-layout { flex-direction: column; }
+ 	.exam-sidebar { position: relative; width: 100%; max-height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+}
