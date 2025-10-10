@@ -95,23 +95,8 @@ export default function ManageCandidates() {
       </div>
       {err && <div className="alert alert-danger py-2 small">{err}</div>}
 
-      <div className="row g-3">
-        <div className="col-md-5">
-          <div className="surface p-3 rounded-3 mb-3" style={{ border:'1px solid var(--border)' }}>
-            <h2 className="h6">Add Candidates</h2>
-            <div className="mb-2 small" style={{ color:'var(--muted)' }}>Enter emails separated by commas or new lines.</div>
-            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e=> setEmailsText(e.target.value)} placeholder="candidate1@example.com\ncandidate2@example.com" />
-            <div className="d-flex gap-2 align-items-end mb-2">
-              <div>
-                <label className="form-label small mb-1">Attempts</label>
-                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value||'1',10))} />
-              </div>
-              <button className="btn btn-sm btn-primary mt-auto" disabled={adding} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
-            </div>
-            {savingMsg && <div className="small" style={{ color:/fail|error/i.test(savingMsg)?'var(--bs-danger)':'var(--muted)' }}>{savingMsg}</div>}
-          </div>
-        </div>
-        <div className="col-md-7">
+      <div className="col g-3">
+        <div className="col-md-17">
           <div className="surface p-3 rounded-3" style={{ border:'1px solid var(--border)', minHeight:300 }}>
             <div className="d-flex justify-content-between align-items-center mb-2">
               <h2 className="h6 m-0">Current Candidates ({candidates.length})</h2>
@@ -141,6 +126,22 @@ export default function ManageCandidates() {
               </table>
             </div>
             <div className="small mt-2" style={{ color:'var(--muted)' }}>Select candidates to remove. Attempts value used when adding or removing per API requirements.</div>
+          </div>
+        </div>
+        <br/>
+        <div className="col-md-17">
+          <div className="surface p-3 rounded-3 mb-3" style={{ border:'1px solid var(--border)' }}>
+            <h2 className="h6">Add Candidates</h2>
+            <div className="mb-2 small" style={{ color:'var(--muted)' }}>Enter emails separated by commas or new lines.</div>
+            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e=> setEmailsText(e.target.value)} placeholder="candidate1@example.com,candidate2@example.com" />
+            <div className="d-flex gap-2 align-items-end mb-2">
+              <div>
+                <label className="form-label small mb-1">Attempts</label>
+                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value||'1',10))} />
+              </div>
+              <button className="btn btn-sm btn-primary mt-auto" disabled={adding} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
+            </div>
+            {savingMsg && <div className="small" style={{ color:/fail|error/i.test(savingMsg)?'var(--bs-danger)':'var(--muted)' }}>{savingMsg}</div>}
           </div>
         </div>
       </div>
