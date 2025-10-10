@@ -10,16 +10,12 @@ import { formatDate } from '../common/appUtils.js';
 
 const sections = [
     { id: 'profile', label: 'Profile', icon: FiUser },
-    { id: 'privacy', label: 'Privacy', icon: FiLock },
-    { id: 'notifications', label: 'Notifications', icon: FiBell },
-    { id: 'appearance', label: 'Appearance', icon: FiMonitor },
-    { id: 'integrations', label: 'Integrations', icon: TfiPlug },
     { id: 'billing', label: 'Billing', icon: FiCreditCard },
+    { id: 'appearance', label: 'Appearance', icon: FiMonitor },
     { id: 'advanced', label: 'Advanced', icon: FiSliders },
 ];
 const limitedSections = [
     { id: 'appearance', label: 'Appearance', icon: FiMonitor },
-    { id: 'billing', label: 'Billing', icon: FiCreditCard },
     { id: 'advanced', label: 'Advanced', icon: FiSliders },
 ];
 
@@ -110,47 +106,7 @@ function AppearancePanel() {
 
 function ProfilePanel({ user, onUserUpdate }) {
     const navigate = useNavigate();
-    const [name, setName] = useState('');
-    const [saved, setSaved] = useState(false);
-
-    useEffect(() => {
-        let mounted = true;
-        (async () => {
-            try {
-                const profileRes = await loadData(getCookie('qs-token'));
-                if (!mounted) return;
-                setName(profileRes?.Name || profileRes?.name || '');
-                setSaved(false);
-            } catch (e) {
-                console.log('Error loading profile:', e);
-                // optional: handle error state here
-            }
-        })();
-        return () => {
-            mounted = false;
-        };
-    }, []);
-    const originalName = useMemo(() => user?.Name || user?.name || '', [user]);
-    const changed = (name ?? '') !== originalName;
-
-    const saveName = () => {
-        if (!user) return;
-        const updated = { ...user, Name: name };
-        setCookie('qs-user', JSON.stringify(updated), { days: 7 });
-        const token = getCookie('qs-token');
-        apiPut('/api/profile', { 'Name': name }, { token }).then(() => {
-            onUserUpdate && onUserUpdate(updated);
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-        });
-    };
-
-    const deactivate = () => {
-        // Clear cookie and reset user in parent
-        deleteCookie('qs-user', { path: '/' });
-        onUserUpdate && onUserUpdate(null);
-    };
-
+    const [update,setUpdate] = useState(false);
     const logout = async () => {
         onUserUpdate && onUserUpdate(null);
         navigate('/', { replace: true });
@@ -167,96 +123,43 @@ function ProfilePanel({ user, onUserUpdate }) {
                 <div className="row g-3">
                     <div className="col-md-6">
                         <label className="form-label">Name</label>
-                        <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} />
+                        <input className="form-control" value={user.name} disabled/>
                     </div>
                     <div className="col-md-6">
                         <label className="form-label">Email</label>
-                        <input className="form-control" value={user.public_email || user.email || ''} disabled />
+                        <input className="form-control" value={user.email} disabled />
                     </div>
                     <div className="col-md-4">
                         <label className="form-label">User ID</label>
                         <input className="form-control" value={user.id ?? ''} disabled />
                     </div>
                     <div className="col-md-4">
+                        <label className="form-label">Birthdate</label>
+                        <input className="form-control" value={new Date(user.birth_date).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled/>
+                    </div>
+                    <div className="col-md-4">
                         <label className="form-label">QS Coins</label>
                         <input className="form-control" value={user.qs_coins ?? 0} disabled />
                     </div>
-                    <div className="col-md-4">
-                        <label className="form-label">Active</label>
-                        <input className="form-control" value={String(user.is_active ?? '')} disabled />
-                    </div>
                     <div className="col-md-6">
                         <label className="form-label">Created At</label>
-                        <input className="form-control" value={formatDate(user.created_at)} disabled />
+                        <input className="form-control" value={new Date(user.created_at).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled />
                     </div>
                     <div className="col-md-6">
                         <label className="form-label">Updated At</label>
-                        <input className="form-control" value={formatDate(user.updated_at)} disabled />
+                        <input className="form-control" value={new Date(user.updated_at).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled />
                     </div>
                     <div className="col-12 d-flex align-items-center gap-2 mt-2">
-                        {changed && name?.trim() && (
-                            <button className="btn btn-primary" onClick={saveName}>Save</button>
-                        )}
-                        {saved && <span className="text-success" role="status">Saved</span>}
                         <span className="ms-auto" />
+                        <button className="btn btn-primary">Edit</button>
                         <button className="btn btn-outline-secondary" onClick={logout}>Log out</button>
-                        <button className="btn btn-outline-danger" onClick={deactivate}>Deactivate</button>
                     </div>
                 </div>
             ) : (
                 <p style={{ color: 'var(--muted)' }}>You are not logged in. Please sign in to manage your profile.</p>
             )}
-        </section>
-    );
-}
-
-function PrivacyPanel() {
-    return (
-        <section>
-            <h2 className="h5 fw-bold mb-3">Privacy</h2>
-            <div className="form-check">
-                <input className="form-check-input" type="checkbox" id="dm" defaultChecked />
-                <label className="form-check-label" htmlFor="dm">Allow DMs from classmates</label>
-            </div>
-            <div className="form-check">
-                <input className="form-check-input" type="checkbox" id="profile" />
-                <label className="form-check-label" htmlFor="profile">Make profile discoverable</label>
-            </div>
-        </section>
-    );
-}
-
-function NotificationsPanel() {
-    return (
-        <section>
-            <h2 className="h5 fw-bold mb-3">Notifications</h2>
-            <div className="row g-3">
-                <div className="col-md-6">
-                    <label className="form-label">Email frequency</label>
-                    <select className="form-select">
-                        <option>All</option>
-                        <option>Important only</option>
-                        <option>None</option>
-                    </select>
-                </div>
-                <div className="col-md-6">
-                    <label className="form-label">Push notifications</label>
-                    <select className="form-select">
-                        <option>Enabled</option>
-                        <option>Disabled</option>
-                    </select>
-                </div>
-            </div>
-        </section>
-    );
-}
-
-function IntegrationsPanel() {
-    return (
-        <section>
-            <h2 className="h5 fw-bold mb-3">Integrations</h2>
-            <p style={{ color: 'var(--muted)' }}>Connect Google Classroom, Microsoft Teams, or LMS systems (coming soon).</p>
-            <button className="btn btn-outline-primary">Connect Google</button>
+            
+        
         </section>
     );
 }
@@ -459,11 +362,8 @@ function AdvancedPanel() {
 
 const panelMap = {
     profile: ProfilePanel,
-    privacy: PrivacyPanel,
-    notifications: NotificationsPanel,
-    appearance: AppearancePanel,
-    integrations: IntegrationsPanel,
     billing: BillingPanel,
+    appearance: AppearancePanel,
     advanced: AdvancedPanel,
 };
 

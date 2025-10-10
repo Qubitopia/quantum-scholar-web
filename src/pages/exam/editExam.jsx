@@ -14,7 +14,7 @@ const makeEmptySection = (sectionId) => ({ sectionId, title: `Section ${sectionI
 const makeEmptyQuestion = (type = 'mcq') => {
   // Start with 2 options minimal; user can add more dynamically
   if (type === 'msq') return { questionNumber: 0, type: 'msq', questionText: '', options: ['', ''], correctOptions: [], successMarks: 1, failureMarks: 0 };
-  if (type === 'open') return { questionNumber: 0, type: 'open', questionText: '', modelAnswer: '', successMarks: 5, failureMarks: 0 };
+  if (type === 'open-ended') return { questionNumber: 0, type: 'open-ended', questionText: '', modelAnswer: '', successMarks: 5, failureMarks: 0 };
   // MCQ default correctOption is -1 (unset) so choosing first option registers a change
   return { questionNumber: 0, type: 'mcq', questionText: '', options: ['', ''], correctOption: -1, successMarks: 1, failureMarks: 0 };
 };
@@ -39,11 +39,11 @@ function parseBackendQuestionsJson(jsonString, fallbackTitle='Untitled Test') {
         title: s.title || `Section ${sIdx + 1}`,
         questionsToDisplay: s.questionsToDisplay || s.questions_to_display || questions.length,
         questions: questions.map((q, qIdx) => {
-          const baseType = q.type === 'open-ended' ? 'open' : (q.type || 'mcq');
+          const baseType = (q.type || 'mcq');
           const mcqDefaults = ['', '', '', ''];
           // Use provided options; ensure at least 2 for choice types
-          const opts = q.options ? [...q.options] : (baseType === 'open' ? [] : [...mcqDefaults]);
-          if (baseType !== 'open' && opts.length < 2) {
+          const opts = q.options ? [...q.options] : (baseType === 'open-ended' ? [] : [...mcqDefaults]);
+          if (baseType !== 'open-ended' && opts.length < 2) {
             while (opts.length < 2) opts.push('');
           }
           return {
@@ -65,7 +65,7 @@ function parseBackendQuestionsJson(jsonString, fallbackTitle='Untitled Test') {
               return arr.map(v => Number(v) - 1).filter(v => v >= 0);
             })(),
             modelAnswer: q.modelAnswer || q.model_answer || '',
-            successMarks: q.successMarks ?? q.success_marks ?? (baseType === 'open' ? 10 : 1),
+            successMarks: q.successMarks ?? q.success_marks ?? (baseType === 'open-ended' ? 10 : 1),
             failureMarks: q.failureMarks ?? q.failure_marks ?? (baseType === 'mcq' || baseType === 'msq' ? 0 : 0),
           };
         })
@@ -190,14 +190,29 @@ export default function EditExam() {
   const moveQuestion = (sectionId, questionNumber, dir) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => { if (s.sectionId !== sectionId) return s; const idx = s.questions.findIndex(q => q.questionNumber === questionNumber); if (idx < 0) return s; const target = dir === 'up' ? idx - 1 : idx + 1; if (target < 0 || target >= s.questions.length) return s; const arr = [...s.questions]; const [q] = arr.splice(idx, 1); arr.splice(target, 0, q); return reindex({ ...s, questions: arr }); }) }));
   const changeQuestionType = (sectionId, questionNumber, newType) => mutate(prev => ({ ...prev, sections: prev.sections.map(s => { if (s.sectionId !== sectionId) return s; const qs = s.questions.map(q => { if (q.questionNumber !== questionNumber) return q; const fresh = makeEmptyQuestion(newType); return { ...fresh, questionNumber: q.questionNumber }; }); return { ...s, questions: qs }; }) }));
 
-  // JSON editor
-  const openJson = () => { setJsonText(JSON.stringify(draft, null, 2)); setJsonErr(''); setShowJson(true); };
+  // JSON editor - display internal representation directly
+  const openJson = () => {
+    const clone = JSON.parse(JSON.stringify(draft));
+    setJsonText(JSON.stringify(clone, null, 2));
+    setJsonErr('');
+    setShowJson(true);
+  };
   const applyJson = () => {
     try {
       const parsed = JSON.parse(jsonText);
       if (!parsed || typeof parsed !== 'object') throw new Error('Root must be object');
       if (!Array.isArray(parsed.sections)) parsed.sections = [];
-      parsed.sections = parsed.sections.map((s, i) => reindex({ sectionId: s.sectionId || i + 1, title: s.title || `Section ${i + 1}`, questionsToDisplay: s.questionsToDisplay || (s.questions ? s.questions.length : 0), questions: Array.isArray(s.questions) ? s.questions : [] }));
+      parsed.sections = parsed.sections.map((s, i) => {
+        const questions = Array.isArray(s.questions) ? s.questions : [];
+        // Ensure question types exist (no remapping now that 'open-ended' is internal)
+        const normQs = questions.map(q => ({ ...q, type: q.type || 'mcq' }));
+        return reindex({
+          sectionId: s.sectionId || i + 1,
+          title: s.title || `Section ${i + 1}`,
+          questionsToDisplay: s.questionsToDisplay || (questions.length),
+          questions: normQs
+        });
+      });
       mutate(() => parsed); // mutate will set dirty & persist
       setShowJson(false);
     } catch (e) { setJsonErr(e.message); }
@@ -246,11 +261,11 @@ export default function EditExam() {
             questions: s.questions.map(q => {
               const base = {
                 questionNumber: q.questionNumber,
-                type: q.type === 'open' ? 'open-ended' : q.type,
+                type: q.type, // already 'open-ended' if applicable
                 questionText: q.questionText,
                 successMarks: q.successMarks,
               };
-              if (q.type === 'open') {
+              if (q.type === 'open-ended') {
                 return {
                   ...base,
                   failureMarks: q.failureMarks ?? 0,
@@ -452,7 +467,7 @@ export default function EditExam() {
             {draft.sections.length===0 && <div className="text-muted small">No sections</div>}
         </div>
         <div className="mt-auto d-flex flex-column gap-2 pt-2 border-top" style={{ borderColor:'var(--border)' }}>
-          <button className="btn btn-sm btn-outline-secondary" onClick={()=> { setJsonText(JSON.stringify(draft,null,2)); setShowJson(true); }}>JSON</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={openJson}>JSON</button>
           <button className="btn btn-sm btn-outline-secondary" onClick={()=> { setUploaderTarget({ kind:'question', optionIndex:null }); setUploader(true); }}>Images</button>
           <button className="btn btn-sm btn-outline-secondary" onClick={()=> navigate(`/exam/manageCandidates?test_id=${encodeURIComponent(id)}`)}>Candidates</button>
           <button className="btn btn-sm btn-outline-secondary" disabled={reloading} onClick={handleReload}>{reloading? 'Reloading…':'Reload Server'}</button>
@@ -495,7 +510,7 @@ export default function EditExam() {
                     <Dropdown.Menu>
                       <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'mcq')}>MCQ</Dropdown.Item>
                       <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'msq')}>MSQ</Dropdown.Item>
-                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'open')}>Open</Dropdown.Item>
+                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'open-ended')}>Open-Ended</Dropdown.Item>
                     </Dropdown.Menu>
                   </Dropdown>
                 </div>
@@ -514,7 +529,7 @@ export default function EditExam() {
                     <select className="form-select form-select-sm" value={q.type} onChange={(e)=> changeQuestionType(sec.sectionId, q.questionNumber, e.target.value)}>
                       <option value="mcq">MCQ</option>
                       <option value="msq">MSQ</option>
-                      <option value="open">Open</option>
+                      <option value="open-ended">Open-Ended</option>
                     </select>
                     <div className="btn-group btn-group-sm">
                       <button className="btn btn-outline-secondary" disabled={q.questionNumber===1} onClick={()=> moveQuestion(sec.sectionId, q.questionNumber,'up')}>↑</button>
@@ -540,7 +555,7 @@ export default function EditExam() {
                     <input type="number" className="form-control form-control-sm" value={q.failureMarks} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ failureMarks: parseFloat(e.target.value||'0') })} />
                   </div>
                 </div>
-                {q.type==='open' && (
+                {q.type==='open-ended' && (
                   <div className="mb-3">
                     <label className="form-label small">Model Answer</label>
                     <textarea className="form-control" rows={2} value={q.modelAnswer||''} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ modelAnswer: e.target.value })} />

@@ -14,26 +14,14 @@ function App() {
   return (
     <Router>
       <Routes>
-        {userType === "admin" ? (
-          <>
-            <Route path="/" element={<Home />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/auth/verify" element={<Verify />} />
-            <Route path="/authNewUser/verify" element={<NewAuth />} />
-            <Route path="/exam/manageExam" element={<ManageExam />} />
-            <Route path="/exam/editExam" element={<EditExam />} />
-            <Route path="/exam/manageCandidates" element={<ManageCandidates />} />
-          </>
-        ) : (
-          <>
-            <Route path="/" element={<Home />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/auth/verify" element={<Verify />} />
-            <Route path="/authNewUser/verify" element={<NewAuth />} />
-          </>
-        )}
+        <Route path="/" element={<Home />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/auth/verify" element={<Verify />} />
+        <Route path="/authNewUser/verify" element={<NewAuth />} />
+        <Route path="/exam/manageExam" element={<ManageExam />} />
+        <Route path="/exam/editExam" element={<EditExam />} />
+        <Route path="/exam/manageCandidates" element={<ManageCandidates />} />
       </Routes>
     </Router>
   );

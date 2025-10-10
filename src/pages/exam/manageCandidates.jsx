@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { apiGet, apiPost } from '../../common/api.js';
+import { apiGet, apiPost, apiPut } from '../../common/api.js';
 import { getCookie } from '../../common/cookie.js';
 
 // Utility to read query param
@@ -51,7 +51,7 @@ export default function ManageCandidates() {
     if (!emails.length) { setSavingMsg('No valid emails'); return; }
     setAdding(true); setSavingMsg('');
     try {
-      await apiPost('/api/test/add-candidates', { test_id: Number(testId), number_of_attempts: attempts, candidate_emails: emails }, { token });
+      await apiPut('/api/test/add-candidates', { test_id: Number(testId), number_of_attempts: attempts, candidate_emails: emails }, { token });
       setSavingMsg(`Added ${emails.length} candidate(s)`);
       setEmailsText('');
       await load();
@@ -67,7 +67,7 @@ export default function ManageCandidates() {
     if (!confirm(`Remove ${selectedEmails.length} candidate(s)?`)) return;
     setRemoving(true); setSavingMsg('');
     try {
-      await apiPost('/api/test/remove-candidates', { test_id: Number(testId), number_of_attempts: attempts, candidate_emails: selectedEmails }, { token });
+      await apiPut('/api/test/remove-candidates', { test_id: Number(testId), number_of_attempts: attempts, candidate_emails: selectedEmails }, { token });
       setSavingMsg(`Removed ${selectedEmails.length} candidate(s)`);
       setSelectedEmails([]);
       await load();
@@ -123,6 +123,7 @@ export default function ManageCandidates() {
                   <tr>
                     <th style={{width:30}}></th>
                     <th>Email</th>
+                    <th style={{width:120}}>Attempts Allotted</th>
                     <th style={{width:120}}>Attempts Left</th>
                   </tr>
                 </thead>
@@ -131,6 +132,7 @@ export default function ManageCandidates() {
                     <tr key={c.candidate_email} className={selectedEmails.includes(c.candidate_email)? 'table-primary': ''}>
                       <td><input type="checkbox" checked={selectedEmails.includes(c.candidate_email)} onChange={()=> toggleSelect(c.candidate_email)} /></td>
                       <td>{c.candidate_email}</td>
+                      <td>{c.attempts_alloted}</td>
                       <td>{c.attempt_remaining}</td>
                     </tr>
                   ))}
