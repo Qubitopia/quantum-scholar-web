@@ -14,6 +14,7 @@ const NewAuth = () => {
   const [name, setName] = useState('');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
+  const [birthdate, setBirthdate] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -38,7 +39,7 @@ const NewAuth = () => {
       if (tokToUse) setCookie('qs-token', tokToUse, { days: 7, path: '/' });
 
       // Step 2: Update profile with name using Authorization header (now validated)
-      const upd = await apiPut('/api/profile', { Name: name.trim() }, { token: tokToUse });
+      const upd = await apiPut('/api/profile', { Name: name.trim(), birthdate: new Date(birthdate).toISOString()}, { token: tokToUse });
       if (upd?.status !== 200) throw new Error('Could not update profile');
 
       // Step 3: Fetch profile and persist user snapshot
@@ -78,6 +79,7 @@ const NewAuth = () => {
           <p className="text-secondary" style={{ color: 'var(--muted)' }}>
             Enter your full name to finish setting up your account.
           </p>
+
           {!token && (
             <div className="alert alert-danger" role="alert">
               Missing token. Please use the link from your email again.
@@ -88,6 +90,9 @@ const NewAuth = () => {
               <label htmlFor="name" className="form-label">Full name</label>
               <input id="name" type="text" className="form-control" value={name}
                      onChange={(e) => setName(e.target.value)} placeholder="Your full name" required />
+              <br />
+              <input type='date' id="birthdate" className="form-control" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+              <br/>
             </div>
             <div className="d-flex gap-3 align-items-center">
               <button type="submit" className="btn btn-primary" disabled={status === 'submitting' || !token}>

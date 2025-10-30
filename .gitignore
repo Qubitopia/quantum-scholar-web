@@ -3,6 +3,8 @@ node_modules
 dist
 dist-ssr
 *.local
+tests
+build
 
 # Editor directories and files
 .vscode/*
