@@ -117,6 +117,9 @@ function ProfilePanel({ user, onUserUpdate }) {
     };
 
     return (
+        useEffect(() => {
+            user=getCookie
+        }, []),
         <section>
             <h2 className="h5 fw-bold mb-3">Profile</h2>
             {user ? (
@@ -159,7 +162,118 @@ function ProfilePanel({ user, onUserUpdate }) {
                 <p style={{ color: 'var(--muted)' }}>You are not logged in. Please sign in to manage your profile.</p>
             )}
             
-        
+        {(() => {
+            function EditProfileModal() {
+                const [name, setName] = useState(user?.name || '');
+                const [birth, setBirth] = useState(() => {
+                    const d = user?.birth_date ? new Date(user.birth_date) : null;
+                    return d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '';
+                });
+                const [saving, setSaving] = useState(false);
+                const [err, setErr] = useState('');
+
+                useEffect(() => {
+                    const sectionEl = document.getElementById('profile-edit-anchor')?.closest('section');
+                    if (!sectionEl) return;
+                    const btns = Array.from(sectionEl.querySelectorAll('button'));
+                    const editBtn = btns.find(b => (b.textContent || '').trim().toLowerCase() === 'edit');
+                    if (!editBtn) return;
+                    const handler = (e) => { e.preventDefault(); setUpdate(true); };
+                    editBtn.addEventListener('click', handler);
+                    return () => editBtn.removeEventListener('click', handler);
+                }, []);
+
+                useEffect(() => {
+                    if (update) {
+                        setName(user?.name || '');
+                        const d = user?.birth_date ? new Date(user.birth_date) : null;
+                        const yyyyMMdd = d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '';
+                        setBirth(yyyyMMdd);
+                        setErr('');
+                    }
+                }, [update, user]);
+
+                const save = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    setErr('');
+                    try {
+                        const token = getCookie('qs-token');
+                        await apiPut('/api/profile', { name, birth_date: birth }, { token });
+                        await loadData(token).then((profile) => {
+                            if (profile) {
+                                const serialized = JSON.stringify(profile);
+                                setCookie('qs-user', serialized, { days: 7, path: '/' });
+                                localStorage.setItem('qs-user', serialized);
+                                onUserUpdate && onUserUpdate(profile);
+                            }
+                        });
+                        setUpdate(false);
+                    } catch (e) {
+                        setErr(e?.response?.data?.message || e.message || 'Failed to update profile');
+                    } finally {
+                        setSaving(false);
+                    }
+                };
+
+                if (!update) return <span id="profile-edit-anchor" />;
+
+                return (
+                    <>
+                        <div
+                            onClick={() => setUpdate(false)}
+                            style={{
+                                position: 'fixed',
+                                inset: 0,
+                                background: 'rgba(0,0,0,0.45)',
+                                zIndex: 1040
+                            }}
+                        />
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            style={{
+                                position: 'fixed',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                background: 'var(--bg-elev)',
+                                color: 'var(--text)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 12,
+                                padding: '1rem',
+                                width: 'min(520px, 92vw)',
+                                zIndex: 1041,
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.35)'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="d-flex justify-content-between align-items-center mb-2">
+                                <h3 className="h6 m-0">Edit profile</h3>
+                                <button className="btn btn-sm btn-outline-secondary" onClick={() => setUpdate(false)}>Close</button>
+                            </div>
+                            <form onSubmit={save} className="d-grid gap-2">
+                                <div>
+                                    <label className="form-label">Name</label>
+                                    <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} required />
+                                </div>
+                                <div>
+                                    <label className="form-label">Birthdate</label>
+                                    <input type="date" className="form-control" value={birth} onChange={(e) => setBirth(e.target.value)} required />
+                                </div>
+                                {err && <div className="text-danger">{err}</div>}
+                                <div className="d-flex gap-2 justify-content-end">
+                                    <button type="button" className="btn btn-outline-secondary" onClick={() => setUpdate(false)} disabled={saving}>Cancel</button>
+                                    <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                                </div>
+                            </form>
+                        </div>
+                    </>
+                );
+            }
+
+            return <EditProfileModal />;
+        })()}
         </section>
     );
 }
