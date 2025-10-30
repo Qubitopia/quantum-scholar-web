@@ -4,10 +4,10 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // Use relative asset paths in production so the built `index.html`
-  // can be opened directly (file://) or served from the `build/`
-  // directory by simple static servers (like Live Server).
-  base: './',
+  // Use absolute asset paths so deployments on routes like 
+  // https://example.com/auth resolve assets correctly.
+  // For local testing, use `npm run dev` or `npm run preview` instead of opening file:// directly.
+  base: '/',
   plugins: [react()],
   build: {
     // Build-specific options
