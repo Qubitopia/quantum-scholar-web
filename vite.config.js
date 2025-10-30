@@ -7,7 +7,7 @@ export default defineConfig({
   // Use absolute asset paths so deployments on routes like 
   // https://example.com/auth resolve assets correctly.
   // For local testing, use `npm run dev` or `npm run preview` instead of opening file:// directly.
-  base: './',
+  base: '/',
   plugins: [react()],
   build: {
     // Build-specific options
