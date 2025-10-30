@@ -11,7 +11,6 @@ export default defineConfig({
   plugins: [react()],
   build: {
     // Build-specific options
-    outDir: 'build', // Output directory for the build
     sourcemap: false, // Generate sourcemaps
   },
   server: {
