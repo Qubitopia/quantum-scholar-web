@@ -10,7 +10,6 @@ import EditExam from './pages/exam/editExam.jsx';
 import ManageCandidates from './pages/exam/manageCandidates.jsx';
 
 function App() {
-  const userType = "admin";
   // Use HashRouter in production builds so opening `build/index.html`
   // directly (or serving the `build/` folder as a static site) won't
   // make the Router see the filesystem path (e.g. `/build/index.html`).
