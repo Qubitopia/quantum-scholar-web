@@ -12,9 +12,9 @@
   "dependencies": {
     "@react-pdf/renderer": "^4.3.0",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
-    "axios": "^1.10.0",
+    "axios": "^1.13.2",
     "bootstrap": "^5.3.7",
-    "dotenv": "^17.2.1",
+    "dotenv": "^17.2.3",
     "idb": "^8.0.3",
     "motion": "^12.23.24",
     "ogl": "^1.0.11",
@@ -22,8 +22,7 @@
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0",
-    "react-router-dom": "^7.7.0",
-    "tailwind": "^2.3.1"
+    "react-router-dom": "^7.7.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
@@ -36,7 +35,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.16",
+    "tailwindcss": "^4.1.18",
     "vite": "^7.0.4"
   }
 }
