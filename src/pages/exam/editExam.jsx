@@ -4,7 +4,6 @@ import { apiGet, apiPut, apiPost } from '../../common/api.js';
 import { getCookie } from '../../common/cookie.js';
 import { useQuery } from '../../common/appUtils.js';
 import { idbGetTest, idbReplaceDraft, idbUpsertDraft } from '../../common/idbTestStore.js';
-import Dropdown from 'react-bootstrap/Dropdown';
 import Navbar from '../../components/navbar.jsx';
 
 
@@ -505,14 +504,14 @@ export default function EditExam() {
                   </div>
                 </div>
                 <div className="mt-3">
-                  <Dropdown>
-                    <Dropdown.Toggle size="sm" variant="outline-primary">Add Question</Dropdown.Toggle>
-                    <Dropdown.Menu>
-                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'mcq')}>MCQ</Dropdown.Item>
-                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'msq')}>MSQ</Dropdown.Item>
-                      <Dropdown.Item onClick={()=> addQuestion(sec.sectionId,'open-ended')}>Open-Ended</Dropdown.Item>
-                    </Dropdown.Menu>
-                  </Dropdown>
+                  <details className="inline-block relative">
+                    <summary className="list-none cursor-pointer btn btn-sm btn-outline-primary">Add Question</summary>
+                    <div className="absolute mt-2 min-w-40 rounded-lg border surface shadow-soft z-20">
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'mcq')}>MCQ</button>
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'msq')}>MSQ</button>
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'open-ended')}>Open-Ended</button>
+                    </div>
+                  </details>
                 </div>
               </div>
             );
