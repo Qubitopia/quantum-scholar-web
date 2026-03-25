@@ -1,5 +1,4 @@
-import 'bootstrap/dist/css/bootstrap.min.css';
-import { BrowserRouter as Router, HashRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Home from './pages/home.jsx';
 import Settings from './pages/settings.jsx';
 import Login from './pages/login.jsx';
@@ -8,6 +7,7 @@ import NewAuth from './pages/newAuth.jsx';
 import ManageExam from './pages/exam/manageExam.jsx';
 import EditExam from './pages/exam/editExam.jsx';
 import ManageCandidates from './pages/exam/manageCandidates.jsx';
+import Temp from './pages/temp.jsx';
 
 function App() {
   // Use HashRouter in production builds so opening `build/index.html`
@@ -25,6 +25,8 @@ function App() {
         <Route path="/exam/manageExam" element={<ManageExam />} />
         <Route path="/exam/editExam" element={<EditExam />} />
         <Route path="/exam/manageCandidates" element={<ManageCandidates />} />
+        <Route path="/temp" element={<Temp />} />
+        <Route path="*" element={<Home />} />
       </Routes>
     </Router>
   );

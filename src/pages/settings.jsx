@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navbar from '../components/navbar.jsx';
 import { useTheme } from '../common/theme.jsx';
-import { FiUser, FiBell, FiLock, FiMonitor, FiCreditCard, FiSliders } from 'react-icons/fi';
-import { TfiPlug } from "react-icons/tfi";
+import { FiUser, FiMonitor, FiCreditCard, FiSliders } from 'react-icons/fi';
 import { getCookie, setCookie, deleteCookie } from '../common/cookie.js';
 import { apiPut, apiPost, apiGet } from '../common/api.js';
 import { useNavigate } from 'react-router-dom';
@@ -31,9 +30,8 @@ function Sidebar({ items, active, onSelect }) {
         <aside style={{
             width: 260,
             borderRight: '1px solid var(--border)',
-            padding: '1rem',
-            display: 'none'
-        }} className="d-none d-md-block">
+            padding: '1rem'
+        }} className="hidden md:block">
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>USER SETTINGS</div>
             <nav style={{ display: 'grid', gap: 6 }}>
                 {items.map(({ id, label, icon: Icon }) => {
@@ -62,7 +60,7 @@ function Sidebar({ items, active, onSelect }) {
 
 function MobileSectionPicker({ items, active, onSelect }) {
     return (
-        <div className="d-md-none" style={{
+        <div className="md:hidden" style={{
             borderBottom: '1px solid var(--border)',
             padding: '0.75rem 1rem',
             background: 'var(--bg-elev)'
@@ -106,7 +104,21 @@ function AppearancePanel() {
 
 function ProfilePanel({ user, onUserUpdate }) {
     const navigate = useNavigate();
-    const [update,setUpdate] = useState(false);
+    const [update, setUpdate] = useState(false);
+    const [name, setName] = useState('');
+    const [birth, setBirth] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+
+    useEffect(() => {
+        if (!update) return;
+        setName(user?.name || '');
+        const d = user?.birth_date ? new Date(user.birth_date) : null;
+        const yyyyMMdd = d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '';
+        setBirth(yyyyMMdd);
+        setErr('');
+    }, [update, user]);
+
     const logout = async () => {
         onUserUpdate && onUserUpdate(null);
         navigate('/', { replace: true });
@@ -116,17 +128,34 @@ function ProfilePanel({ user, onUserUpdate }) {
 
     };
 
+    const save = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        setErr('');
+        try {
+            const token = getCookie('qs-token');
+            await apiPut('/api/profile', { name, birth_date: birth }, { token });
+            await loadData(token).then((profile) => {
+                if (profile) {
+                    onUserUpdate && onUserUpdate(profile);
+                }
+            });
+            setUpdate(false);
+        } catch (e) {
+            setErr(e?.response?.data?.message || e.message || 'Failed to update profile');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
-        useEffect(() => {
-            user=getCookie
-        }, []),
         <section>
             <h2 className="h5 fw-bold mb-3">Profile</h2>
             {user ? (
                 <div className="row g-3">
                     <div className="col-md-6">
                         <label className="form-label">Name</label>
-                        <input className="form-control" value={user.name} disabled/>
+                        <input className="form-control" value={user.name} disabled />
                     </div>
                     <div className="col-md-6">
                         <label className="form-label">Email</label>
@@ -138,7 +167,7 @@ function ProfilePanel({ user, onUserUpdate }) {
                     </div>
                     <div className="col-md-4">
                         <label className="form-label">Birthdate</label>
-                        <input className="form-control" value={new Date(user.birth_date).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled/>
+                        <input className="form-control" value={new Date(user.birth_date).toLocaleDateString('en-US', { dateStyle: 'medium' })} disabled />
                     </div>
                     <div className="col-md-4">
                         <label className="form-label">QS Coins</label>
@@ -146,134 +175,74 @@ function ProfilePanel({ user, onUserUpdate }) {
                     </div>
                     <div className="col-md-6">
                         <label className="form-label">Created At</label>
-                        <input className="form-control" value={new Date(user.created_at).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled />
+                        <input className="form-control" value={new Date(user.created_at).toLocaleDateString('en-US', { dateStyle: 'medium' })} disabled />
                     </div>
                     <div className="col-md-6">
                         <label className="form-label">Updated At</label>
-                        <input className="form-control" value={new Date(user.updated_at).toLocaleDateString('en-US',{dateStyle: 'medium'})} disabled />
+                        <input className="form-control" value={new Date(user.updated_at).toLocaleDateString('en-US', { dateStyle: 'medium' })} disabled />
                     </div>
                     <div className="col-12 d-flex align-items-center gap-2 mt-2">
                         <span className="ms-auto" />
-                        <button className="btn btn-primary">Edit</button>
+                        <button className="btn btn-primary" onClick={() => setUpdate(true)}>Edit</button>
                         <button className="btn btn-outline-secondary" onClick={logout}>Log out</button>
                     </div>
                 </div>
             ) : (
                 <p style={{ color: 'var(--muted)' }}>You are not logged in. Please sign in to manage your profile.</p>
             )}
-            
-        {(() => {
-            function EditProfileModal() {
-                const [name, setName] = useState(user?.name || '');
-                const [birth, setBirth] = useState(() => {
-                    const d = user?.birth_date ? new Date(user.birth_date) : null;
-                    return d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '';
-                });
-                const [saving, setSaving] = useState(false);
-                const [err, setErr] = useState('');
 
-                useEffect(() => {
-                    const sectionEl = document.getElementById('profile-edit-anchor')?.closest('section');
-                    if (!sectionEl) return;
-                    const btns = Array.from(sectionEl.querySelectorAll('button'));
-                    const editBtn = btns.find(b => (b.textContent || '').trim().toLowerCase() === 'edit');
-                    if (!editBtn) return;
-                    const handler = (e) => { e.preventDefault(); setUpdate(true); };
-                    editBtn.addEventListener('click', handler);
-                    return () => editBtn.removeEventListener('click', handler);
-                }, []);
-
-                useEffect(() => {
-                    if (update) {
-                        setName(user?.name || '');
-                        const d = user?.birth_date ? new Date(user.birth_date) : null;
-                        const yyyyMMdd = d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '';
-                        setBirth(yyyyMMdd);
-                        setErr('');
-                    }
-                }, [update, user]);
-
-                const save = async (e) => {
-                    e.preventDefault();
-                    setSaving(true);
-                    setErr('');
-                    try {
-                        const token = getCookie('qs-token');
-                        await apiPut('/api/profile', { name, birth_date: birth }, { token });
-                        await loadData(token).then((profile) => {
-                            if (profile) {
-                                const serialized = JSON.stringify(profile);
-                                setCookie('qs-user', serialized, { days: 7, path: '/' });
-                                localStorage.setItem('qs-user', serialized);
-                                onUserUpdate && onUserUpdate(profile);
-                            }
-                        });
-                        setUpdate(false);
-                    } catch (e) {
-                        setErr(e?.response?.data?.message || e.message || 'Failed to update profile');
-                    } finally {
-                        setSaving(false);
-                    }
-                };
-
-                if (!update) return <span id="profile-edit-anchor" />;
-
-                return (
-                    <>
-                        <div
-                            onClick={() => setUpdate(false)}
-                            style={{
-                                position: 'fixed',
-                                inset: 0,
-                                background: 'rgba(0,0,0,0.45)',
-                                zIndex: 1040
-                            }}
-                        />
-                        <div
-                            role="dialog"
-                            aria-modal="true"
-                            style={{
-                                position: 'fixed',
-                                top: '50%',
-                                left: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                background: 'var(--bg-elev)',
-                                color: 'var(--text)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 12,
-                                padding: '1rem',
-                                width: 'min(520px, 92vw)',
-                                zIndex: 1041,
-                                boxShadow: '0 8px 24px rgba(0,0,0,0.35)'
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                                <h3 className="h6 m-0">Edit profile</h3>
-                                <button className="btn btn-sm btn-outline-secondary" onClick={() => setUpdate(false)}>Close</button>
-                            </div>
-                            <form onSubmit={save} className="d-grid gap-2">
-                                <div>
-                                    <label className="form-label">Name</label>
-                                    <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} required />
-                                </div>
-                                <div>
-                                    <label className="form-label">Birthdate</label>
-                                    <input type="date" className="form-control" value={birth} onChange={(e) => setBirth(e.target.value)} required />
-                                </div>
-                                {err && <div className="text-danger">{err}</div>}
-                                <div className="d-flex gap-2 justify-content-end">
-                                    <button type="button" className="btn btn-outline-secondary" onClick={() => setUpdate(false)} disabled={saving}>Cancel</button>
-                                    <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-                                </div>
-                            </form>
+            {update && (
+                <>
+                    <div
+                        onClick={() => setUpdate(false)}
+                        style={{
+                            position: 'fixed',
+                            inset: 0,
+                            background: 'rgba(0,0,0,0.45)',
+                            zIndex: 1040
+                        }}
+                    />
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        style={{
+                            position: 'fixed',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            background: 'var(--bg-elev)',
+                            color: 'var(--text)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 12,
+                            padding: '1rem',
+                            width: 'min(520px, 92vw)',
+                            zIndex: 1041,
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h3 className="h6 m-0">Edit profile</h3>
+                            <button className="btn btn-sm btn-outline-secondary" onClick={() => setUpdate(false)}>Close</button>
                         </div>
-                    </>
-                );
-            }
-
-            return <EditProfileModal />;
-        })()}
+                        <form onSubmit={save} className="d-grid gap-2">
+                            <div>
+                                <label className="form-label">Name</label>
+                                <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} required />
+                            </div>
+                            <div>
+                                <label className="form-label">Birthdate</label>
+                                <input type="date" className="form-control" value={birth} onChange={(e) => setBirth(e.target.value)} required />
+                            </div>
+                            {err && <div className="text-danger">{err}</div>}
+                            <div className="d-flex gap-2 justify-content-end">
+                                <button type="button" className="btn btn-outline-secondary" onClick={() => setUpdate(false)} disabled={saving}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </>
+            )}
         </section>
     );
 }
@@ -288,17 +257,17 @@ function BillingPanel({ user, onUserUpdate }) {
     const token = getCookie('qs-token');
     const [orders, setOrders] = useState([]);
 
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
             const res = await apiGet('/api/orders', { token });
             console.log("Fetched orders:", res.data.orders);
             setOrders(res.data.orders);
-            
+
         } catch (e) {
             setOrders([]);
             console.error('Error fetching orders:', e);
         }
-    };
+    }, [token]);
 
     const handleBuy = async (e) => {
         e.preventDefault();
@@ -375,16 +344,36 @@ function BillingPanel({ user, onUserUpdate }) {
 
     const statusBadge = (s) => {
         const lower = String(s || '').toLowerCase();
-        const color = lower === 'completed' ? 'success' : lower === 'pending' ? 'warning' : 'secondary';
-        return <span className={`badge bg-${color}`}>{s}</span>;
+        const styles = {
+            completed: { bg: 'color-mix(in srgb, #16a34a 18%, transparent)', color: '#16a34a' },
+            pending: { bg: 'color-mix(in srgb, #d97706 18%, transparent)', color: '#d97706' },
+            fallback: { bg: 'color-mix(in srgb, var(--bg-elev) 88%, transparent)', color: 'var(--text)' }
+        };
+        const tone = styles[lower] || styles.fallback;
+        return (
+            <span
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    borderRadius: 999,
+                    padding: '0.2rem 0.55rem',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background: tone.bg,
+                    color: tone.color,
+                    border: '1px solid var(--border)'
+                }}
+            >
+                {s}
+            </span>
+        );
     };
 
     useEffect(() => {
         if (!loading) {
             fetchOrders();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading]);
+    }, [loading, fetchOrders]);
 
     return (
         <section>
@@ -411,14 +400,7 @@ function BillingPanel({ user, onUserUpdate }) {
                         <input type="number" min={1} className="form-control" value={coinsToBuy}
                             onChange={(e) => setCoinsToBuy(parseInt(e.target.value || '0', 10))} />
                     </div>
-                    <div className="col-sm-3">
-                        <label className="form-label">Currency</label>
-                        <select className="form-select" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                            <option value="/api/purchase-qscoins-inr">INR (Razorpay)</option>
-                            <option value="/api/purchase-qscoins-usd">USD (Razorpay)</option>
-                        </select>
-                    </div>
-                </div>
+                </div> 
                 <div className="d-flex gap-2 mt-3">
                     <button type="submit" className="btn btn-primary" disabled={loading || !user}>
                         {loading ? 'Processing…' : 'Buy with Razorpay'}
@@ -436,7 +418,7 @@ function BillingPanel({ user, onUserUpdate }) {
                     <div style={{ color: 'var(--muted)' }}>No orders found.</div>
                 ) : (
                     <div className="table-responsive">
-                        <table className="table table-sm align-middle">
+                        <table className="table table-sm align-middle text-center">
                             <thead>
                                 <tr>
                                     <th>Order</th>
@@ -522,8 +504,7 @@ const Settings = () => {
         if (!availableSections.find(s => s.id === active)) {
             setActive(availableSections[0]?.id || 'appearance');
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoggedIn]);
+    }, [active, availableSections]);
 
     return (
         <div style={{ minHeight: '100vh', width: '100vw', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>

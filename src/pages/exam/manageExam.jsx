@@ -81,38 +81,52 @@ export default function ManageExam() {
 					)}
 
 					{!loading && exams?.length > 0 && (
-						<div className="table-responsive">
-							<table className="table align-middle" style={{ color: 'var(--text)' }}>
-								<thead>
-									<tr>
-										<th style={{ width: 90 }}>ID</th>
-										<th>Name</th>
-										<th style={{ width: 140 }}>Duration</th>
-										<th style={{ width: 140 }}>Total Marks</th>
-										<th style={{ width: 140 }}>Questions</th>
-										<th style={{ width: 180 }}>Start Time</th>
-										<th style={{ width: 180 }}>End Time</th>
-									</tr>
-								</thead>
-								<tbody>
-									{exams.map((ex) => (
-										<tr key={ex.test_id}>
-											<td>{ex.test_id}</td>
-											<td>{ex.test_name}</td>
-											<td>{ex.test_duration}</td>
-											<td>{ex.total_marks}</td>
-											<td>{ex.number_of_questions_per_test}</td>
-											<td>{ex.test_start_time ? new Date(ex.test_start_time).toLocaleString([], { dateStyle:'medium', timeStyle: 'short' }) : '-'}</td>
-											<td>{ex.test_end_time ? new Date(ex.test_end_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '-'}</td>
-											<td className="text-end">
-												<button className="btn btn-sm btn-outline-primary" onClick={() => editExam(ex.test_id)}>Edit</button>
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					)}
+  <div className="table-responsive">
+    <table className="table align-middle text-center" style={{ color: 'var(--text)' }}>
+      <thead>
+        <tr>
+          <th style={{ width: 90 }}>ID</th>
+          <th>Name</th>
+          <th style={{ width: 140 }}>Duration</th>
+          <th style={{ width: 140 }}>Total Marks</th>
+          <th style={{ width: 140 }}>Questions</th>
+          <th style={{ width: 180 }}>Start Time</th>
+          <th style={{ width: 180 }}>End Time</th>
+          <th style={{ width: 120 }}>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {exams.map((ex) => (
+          <tr key={ex.test_id}>
+            <td>{ex.test_id}</td>
+            <td>{ex.test_name}</td>
+            <td>{ex.test_duration}</td>
+            <td>{ex.total_marks}</td>
+            <td>{ex.number_of_questions_per_test}</td>
+            <td>
+              {ex.test_start_time
+                ? new Date(ex.test_start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+                : '-'}
+            </td>
+            <td>
+              {ex.test_end_time
+                ? new Date(ex.test_end_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+                : '-'}
+            </td>
+            <td>
+              <button
+                className="btn btn-sm btn-outline-primary"
+                onClick={() => editExam(ex.test_id)}
+              >
+                Edit
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
 
 					{/* Create Exam Modal */}
 					{showCreate && (

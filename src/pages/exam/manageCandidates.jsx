@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { apiGet, apiPost, apiPut } from '../../common/api.js';
-import { getCookie } from '../../common/cookie.js';
+import { getCookie, setCookie } from '../../common/cookie.js';
 
 // Utility to read query param
 function useQuery() {
@@ -29,6 +29,8 @@ export default function ManageCandidates() {
   const load = async () => {
     setRefreshing(true);
     try {
+      let { data } = await apiGet('/api/profile', { token });
+      setCookie('qs-user', JSON.stringify(data.user), { days: 7 });
       setErr('');
       const res = await apiGet(`/api/test/${encodeURIComponent(testId)}/candidates`, { token });
       setCandidates(res?.data?.candidates || []);
@@ -55,6 +57,7 @@ export default function ManageCandidates() {
       setSavingMsg(`Added ${emails.length} candidate(s)`);
       setEmailsText('');
       await load();
+
     } catch (e) {
       console.error(e); setSavingMsg(e?.response?.data?.message || 'Add failed');
     } finally {

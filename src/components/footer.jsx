@@ -1,5 +1,4 @@
 import React from 'react';
-import { Container, Row, Col } from 'react-bootstrap';
 const styles = {
     footer: {
         backgroundColor: 'var(--bg-elev)',
@@ -22,18 +21,18 @@ const styles = {
 };
 const Footer = () => (
     <footer style={styles.footer}>
-        <Container>
-            <Row>
-                <Col md={6}>
+        <div className="container">
+            <div className="row">
+                <div className="col-md-6">
                     <h5>Mock Project</h5>
                     <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
-                </Col>
-                <Col md={6} className="text-md-end">
+                </div>
+                <div className="col-md-6 text-md-end">
                     <a href="/privacy" style={styles.link} className="me-3">Privacy Policy</a>
                     <a href="/terms" style={styles.linkLast}>Terms of Service</a>
-                </Col>
-            </Row>
-        </Container>
+                </div>
+            </div>
+        </div>
     </footer>
 );
 
