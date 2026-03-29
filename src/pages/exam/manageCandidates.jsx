@@ -140,7 +140,7 @@ export default function ManageCandidates() {
             <div className="d-flex gap-2 align-items-end mb-2">
               <div>
                 <label className="form-label small mb-1">Attempts</label>
-                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value||'1',10))} />
+                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value))} />
               </div>
               <button className="btn btn-sm btn-primary mt-auto" disabled={adding} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
             </div>

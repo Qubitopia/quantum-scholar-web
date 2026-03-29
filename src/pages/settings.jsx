@@ -248,7 +248,7 @@ function ProfilePanel({ user, onUserUpdate }) {
 }
 
 function BillingPanel({ user, onUserUpdate }) {
-    const [coinsToBuy, setCoinsToBuy] = useState(50);
+    const [coinsToBuy, setCoinsToBuy] = useState(100);
     const [loading, setLoading] = useState(false);
     const [currency, setCurrency] = useState('/api/purchase-qscoins-inr');
     const [error, setError] = useState('');
@@ -398,7 +398,7 @@ function BillingPanel({ user, onUserUpdate }) {
                     <div className="col-sm-4">
                         <label className="form-label">QS Coins to buy</label>
                         <input type="number" min={1} className="form-control" value={coinsToBuy}
-                            onChange={(e) => setCoinsToBuy(parseInt(e.target.value || '0', 10))} />
+                            onChange={(e) => setCoinsToBuy(parseInt(e.target.value))} />
                     </div>
                 </div> 
                 <div className="d-flex gap-2 mt-3">

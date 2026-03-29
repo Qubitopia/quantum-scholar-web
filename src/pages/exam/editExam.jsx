@@ -5,7 +5,13 @@ import { getCookie } from '../../common/cookie.js';
 import { useQuery } from '../../common/appUtils.js';
 import { idbGetTest, idbReplaceDraft, idbUpsertDraft } from '../../common/idbTestStore.js';
 import Navbar from '../../components/navbar.jsx';
-
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
 
 /* Question / section factories */
 const makeEmptyTest = (title = 'Untitled Test') => ({ title, sections: [] });
@@ -17,11 +23,16 @@ const makeEmptyQuestion = (type = 'mcq') => {
   // MCQ default correctOption is -1 (unset) so choosing first option registers a change
   return { questionNumber: 0, type: 'mcq', questionText: '', options: ['', ''], correctOption: -1, successMarks: 1, failureMarks: 0 };
 };
+const questionTypeLabel = (type) => {
+  if (type === 'msq') return 'MSQ';
+  if (type === 'open-ended') return 'Open-Ended';
+  return 'MCQ';
+};
 const reindex = (section) => ({ ...section, questions: section.questions.map((q, i) => ({ ...q, questionNumber: i + 1 })) });
 
 
 // Robust parser for backend questions_json (string) -> internal draft
-function parseBackendQuestionsJson(jsonString, fallbackTitle='Untitled Test') {
+function parseBackendQuestionsJson(jsonString, fallbackTitle = 'Untitled Test') {
   if (!jsonString || jsonString === '{}' || jsonString === 'null') {
     return makeEmptyTest(fallbackTitle);
   }
@@ -79,7 +90,7 @@ export default function EditExam() {
   const id = query.get('test_id');
   const token = getCookie('qs-token');
   const [uploader, setUploader] = useState(false);
-  const [uploaderTarget, setUploaderTarget] = useState({ kind:'question', optionIndex:null });
+  const [uploaderTarget, setUploaderTarget] = useState({ kind: 'question', optionIndex: null });
 
   const [loading, setLoading] = useState(true);
   const [remote, setRemote] = useState(null); // server payload
@@ -95,7 +106,7 @@ export default function EditExam() {
   const [reloading, setReloading] = useState(false);
 
   // Initial load & any fetch triggers
-  const fetchRemote = async (force=false) => {
+  const fetchRemote = async (force = false) => {
     const res = await apiGet(`/api/test/${encodeURIComponent(id)}`, { token });
     const data = res?.data;
     if (!data) throw new Error('Exam not found');
@@ -136,11 +147,11 @@ export default function EditExam() {
     }
     init();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, token, navigate]);
 
   const handleReload = async () => {
-    try { setReloading(true); await fetchRemote(true); setSaveMsg('Reloaded from server'); } catch (e) { console.error(e); setSaveMsg(e.message || 'Reload failed'); } finally { setReloading(false); setTimeout(()=> setSaveMsg(''), 3000); }
+    try { setReloading(true); await fetchRemote(true); setSaveMsg('Reloaded from server'); } catch (e) { console.error(e); setSaveMsg(e.message || 'Reload failed'); } finally { setReloading(false); setTimeout(() => setSaveMsg(''), 3000); }
   };
 
   // Derived totals
@@ -228,17 +239,17 @@ export default function EditExam() {
         if (!q.questionText || !q.questionText.trim()) errs.push(`Section ${si + 1} Q${qi + 1} text required`);
         if (q.type === 'mcq') {
           if (!Array.isArray(q.options) || q.options.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MCQ needs 2+ options`);
-          const nonEmpty = q.options.filter(o=> (o||'').trim().length>0);
-            if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MCQ needs 2+ non-empty options`);
+          const nonEmpty = q.options.filter(o => (o || '').trim().length > 0);
+          if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MCQ needs 2+ non-empty options`);
           if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption >= q.options.length) errs.push(`Section ${si + 1} Q${qi + 1} MCQ correct option invalid`);
           else if (!q.options[q.correctOption] || !q.options[q.correctOption].trim()) errs.push(`Section ${si + 1} Q${qi + 1} MCQ correct option is empty`);
         }
         if (q.type === 'msq') {
           if (!Array.isArray(q.options) || q.options.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs 2+ options`);
-          const nonEmpty = q.options.filter(o=> (o||'').trim().length>0);
-            if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs 2+ non-empty options`);
+          const nonEmpty = q.options.filter(o => (o || '').trim().length > 0);
+          if (nonEmpty.length < 2) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs 2+ non-empty options`);
           if (!Array.isArray(q.correctOptions) || !q.correctOptions.length) errs.push(`Section ${si + 1} Q${qi + 1} MSQ needs at least one correct option`);
-          else if (q.correctOptions.some(ci => ci <0 || ci >= q.options.length)) errs.push(`Section ${si + 1} Q${qi + 1} MSQ correct option index out of range`);
+          else if (q.correctOptions.some(ci => ci < 0 || ci >= q.options.length)) errs.push(`Section ${si + 1} Q${qi + 1} MSQ correct option index out of range`);
           else if (q.correctOptions.some(ci => !q.options[ci] || !q.options[ci].trim())) errs.push(`Section ${si + 1} Q${qi + 1} MSQ has correct option with empty text`);
         }
       });
@@ -255,40 +266,40 @@ export default function EditExam() {
         title: t.title,
         sections: t.sections.map(s => ({
           sectionId: s.sectionId,
-            title: s.title,
-            questionsToDisplay: s.questionsToDisplay,
-            questions: s.questions.map(q => {
-              const base = {
-                questionNumber: q.questionNumber,
-                type: q.type, // already 'open-ended' if applicable
-                questionText: q.questionText,
-                successMarks: q.successMarks,
+          title: s.title,
+          questionsToDisplay: s.questionsToDisplay,
+          questions: s.questions.map(q => {
+            const base = {
+              questionNumber: q.questionNumber,
+              type: q.type, // already 'open-ended' if applicable
+              questionText: q.questionText,
+              successMarks: q.successMarks,
+            };
+            if (q.type === 'open-ended') {
+              return {
+                ...base,
+                failureMarks: q.failureMarks ?? 0,
+                modelAnswer: q.modelAnswer || ''
               };
-              if (q.type === 'open-ended') {
-                return {
-                  ...base,
-                  failureMarks: q.failureMarks ?? 0,
-                  modelAnswer: q.modelAnswer || ''
-                };
-              }
-              if (q.type === 'msq') {
-                return {
-                  ...base,
-                  options: q.options,
-                  // convert 0-based -> 1-based for persistence
-                  correctOptions: Array.isArray(q.correctOptions) ? q.correctOptions.filter(v=> typeof v==='number' && v>=0).map(v=> v+1) : [],
-                  failureMarks: q.failureMarks ?? -1
-                };
-              }
-              // mcq
+            }
+            if (q.type === 'msq') {
               return {
                 ...base,
                 options: q.options,
-                // convert 0-based -> 1-based; if unset (-1) keep as -1 to signal invalid until user fixes
-                correctOption: typeof q.correctOption === 'number' && q.correctOption >= 0 ? (q.correctOption + 1) : -1,
+                // convert 0-based -> 1-based for persistence
+                correctOptions: Array.isArray(q.correctOptions) ? q.correctOptions.filter(v => typeof v === 'number' && v >= 0).map(v => v + 1) : [],
                 failureMarks: q.failureMarks ?? -1
               };
-            })
+            }
+            // mcq
+            return {
+              ...base,
+              options: q.options,
+              // convert 0-based -> 1-based; if unset (-1) keep as -1 to signal invalid until user fixes
+              correctOption: typeof q.correctOption === 'number' && q.correctOption >= 0 ? (q.correctOption + 1) : -1,
+              failureMarks: q.failureMarks ?? -1
+            };
+          })
         }))
       });
       const payload = { test_id: Number(id), test: transform(draft) };
@@ -319,7 +330,7 @@ export default function EditExam() {
     };
 
     const handleFiles = async (e) => {
-      const files = Array.from(e.target.files||[]);
+      const files = Array.from(e.target.files || []);
       if (!files.length) return;
       setBusy(true); setErr('');
       try {
@@ -328,37 +339,37 @@ export default function EditExam() {
           const form = new FormData();
           form.append('file', f);
           try {
-            const res = await apiPost('/api/upload-image', form, { token, headers: { 'Content-Type': 'multipart/form-data' }});
+            const res = await apiPost('/api/upload-image', form, { token, headers: { 'Content-Type': 'multipart/form-data' } });
             const data = res?.data;
             if (data && data.url) {
-              const record = { id: Date.now().toString()+Math.random().toString(36).slice(2), name: f.name, url: data.url, filename: data.filename, ts: Date.now() };
-              persist([record, ...items].slice(0,300));
+              const record = { id: Date.now().toString() + Math.random().toString(36).slice(2), name: f.name, url: data.url, filename: data.filename, ts: Date.now() };
+              persist([record, ...items].slice(0, 300));
             }
           } catch (ex) {
             console.error('Upload failed', ex);
             setErr(ex?.response?.data?.message || ex.message || 'Upload failed');
           } finally {
-            setUploadingNames(prev => prev.filter(n => n!==f.name));
+            setUploadingNames(prev => prev.filter(n => n !== f.name));
           }
         }
       } finally {
         setBusy(false);
-        e.target.value='';
+        e.target.value = '';
       }
     };
 
     const removeItem = (id) => {
-      const next = items.filter(i=> i.id!==id);
+      const next = items.filter(i => i.id !== id);
       persist(next);
     };
 
-    const copyLink = (url) => { navigator.clipboard.writeText(url).catch(()=>{}); };
-    const copyMarkdown = (name,url) => { navigator.clipboard.writeText(`![${name}](${url})`).catch(()=>{}); };
+    const copyLink = (url) => { navigator.clipboard.writeText(url).catch(() => { }); };
+    const copyMarkdown = (name, url) => { navigator.clipboard.writeText(`![${name}](${url})`).catch(() => { }); };
 
     return (
-      
-      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:2500, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <div className="surface p-3 rounded-3 d-flex flex-column" style={{ width:'min(700px,95vw)', maxHeight:'92vh', border:'1px solid var(--border)' }}>
+
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="surface p-3 rounded-3 d-flex flex-column" style={{ width: 'min(700px,95vw)', maxHeight: '92vh', border: '1px solid var(--border)' }}>
           <div className="d-flex justify-content-between align-items-center mb-2">
             <h3 className="h6 m-0">Uploaded Images (Remote links)</h3>
             <div className="d-flex gap-2">
@@ -370,33 +381,33 @@ export default function EditExam() {
             </div>
           </div>
           {err && <div className="alert alert-danger py-1 small mb-2">{err}</div>}
-          <div className="small mb-2" style={{ color:'var(--muted)' }}>{items.length} item(s). Only names & URLs shown (images not rendered).</div>
-          <div className="overflow-auto" style={{ flex:1, border:'1px solid var(--border)', borderRadius:6 }}>
-            <table className="table table-sm table-borderless align-middle mb-0" style={{ fontSize:12 }}>
-              <thead style={{ position:'sticky', top:0, background:'var(--bs-body-bg)' }}>
-                <tr><th style={{ width:'40%' }}>Name</th><th>Filename</th><th>Actions</th></tr>
+          <div className="small mb-2" style={{ color: 'var(--muted)' }}>{items.length} item(s). Only names & URLs shown (images not rendered).</div>
+          <div className="overflow-auto" style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 6 }}>
+            <table className="table table-sm table-borderless align-middle mb-0" style={{ fontSize: 12 }}>
+              <thead style={{ position: 'sticky', top: 0, background: 'var(--bs-body-bg)' }}>
+                <tr><th style={{ width: '40%' }}>Name</th><th>Filename</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {items.map(it => (
                   <tr key={it.id}>
                     <td className="text-truncate" title={it.name}>{it.name}</td>
-                    <td className="text-truncate" title={it.filename || it.url}>{(it.filename||'').slice(0,40) || '—'}</td>
+                    <td className="text-truncate" title={it.filename || it.url}>{(it.filename || '').slice(0, 40) || '—'}</td>
                     <td className="d-flex flex-wrap gap-1">
-                      <button className="btn btn-xs btn-outline-secondary" onClick={()=> copyLink(it.url)}>Copy Link</button>
-                      <button className="btn btn-xs btn-outline-secondary" onClick={()=> copyMarkdown(it.name, it.url)}>MD</button>
-                      {hasQuestionSelected && <button className="btn btn-xs btn-outline-primary" onClick={()=> onInsert(it.url)}>Insert</button>}
-                      <button className="btn btn-xs btn-outline-danger" onClick={()=> removeItem(it.id)}>Del</button>
+                      <button className="btn btn-xs btn-outline-secondary" onClick={() => copyLink(it.url)}>Copy Link</button>
+                      <button className="btn btn-xs btn-outline-secondary" onClick={() => copyMarkdown(it.name, it.url)}>MD</button>
+                      {hasQuestionSelected && <button className="btn btn-xs btn-outline-primary" onClick={() => onInsert(it.url)}>Insert</button>}
+                      <button className="btn btn-xs btn-outline-danger" onClick={() => removeItem(it.id)}>Del</button>
                     </td>
                   </tr>
                 ))}
                 {uploadingNames.map(n => (
                   <tr key={n}><td colSpan={3} className="text-muted">Uploading {n}…</td></tr>
                 ))}
-                {items.length===0 && uploadingNames.length===0 && <tr><td colSpan={3} className="text-muted">No images uploaded yet.</td></tr>}
+                {items.length === 0 && uploadingNames.length === 0 && <tr><td colSpan={3} className="text-muted">No images uploaded yet.</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="small mt-2" style={{ color:'var(--muted)' }}>Use Link or MD buttons to copy, Insert to append to selected question text.</div>
+          <div className="small mt-2" style={{ color: 'var(--muted)' }}>Use Link or MD buttons to copy, Insert to append to selected question text.</div>
         </div>
       </div>
     );
@@ -432,74 +443,75 @@ export default function EditExam() {
     <div style={{ color: 'var(--text)' }}>
       <Navbar />
       <div className="exam-layout">
-      {/* Sidebar */}
-      <aside className="exam-sidebar">
-        <div className="d-flex align-items-center justify-content-between mb-1">
-          <h2 className="h6 m-0">Exam #{id}</h2>
-          <button className="btn btn-sm btn-outline-primary" onClick={addSection}>+ Sec</button>
-        </div>
-        <div className="small mb-2" style={{ color: 'var(--muted)' }}>{derived.totalQuestions} questions • {derived.totalMarks} marks {dirty && <span className="ms-1">(draft)</span>}</div>
-        <div className="vstack gap-2 section-list">
+        {/* Sidebar */}
+        <aside className="exam-sidebar">
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <h2 className="h6 m-0">Exam #{id}</h2>
+            <button className="btn btn-sm btn-outline-primary" onClick={addSection}>Add Section</button>
+          </div>
+          <div className="small mb-2" style={{ color: 'var(--muted)' }}>{derived.totalQuestions} questions • {derived.totalMarks} marks {dirty && <span className="ms-1">(draft)</span>}</div>
+          <div className="vstack gap-2 section-list">
             {draft.sections.map(sec => (
-              <div key={sec.sectionId} className="border rounded-3" style={{ borderColor: 'var(--border)' }}>
-                <div className={`d-flex align-items-center justify-content-between px-2 py-1 ${selected.sectionId===sec.sectionId && selected.questionNumber==null ? 'bg-primary text-white rounded-top-3' : ''}`}
-                     role="button"
-                     onClick={()=> setSelected({ sectionId: sec.sectionId, questionNumber: null })}>
+              <div key={sec.sectionId} className="border rounded-3 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                <div className={`d-flex align-items-center justify-content-between px-2 py-1 ${selected.sectionId === sec.sectionId && selected.questionNumber == null ? 'rounded-top-3' : ''}`}
+                  style={selected.sectionId === sec.sectionId && selected.questionNumber == null ? { background: 'color-mix(in srgb, var(--bg-elev) 82%, #0d6efd 18%)', color: 'var(--text)' } : undefined}
+                  role="button"
+                  onClick={() => setSelected({ sectionId: sec.sectionId, questionNumber: null })}>
                   <span className="text-truncate" style={{ fontSize: '0.8rem' }}>{sec.title || `Section ${sec.sectionId}`}</span>
                   <div className="d-flex gap-1">
-                    <button className="btn btn-xs btn-outline-secondary py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e)=> { e.stopPropagation(); addQuestion(sec.sectionId,'mcq'); }}>+Q</button>
-                    <button className="btn btn-xs btn-outline-danger py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e)=> { e.stopPropagation(); deleteSection(sec.sectionId); }}>✕</button>
+                    <button className="btn btn-xs btn-outline-secondary py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e) => { e.stopPropagation(); addQuestion(sec.sectionId, 'mcq'); }}>+Q</button>
+                    <button className="btn btn-xs btn-outline-danger py-0 px-1" style={{ fontSize: '0.65rem' }} onClick={(e) => { e.stopPropagation(); deleteSection(sec.sectionId); }}>✕</button>
                   </div>
                 </div>
-                {sec.questions.length>0 && (
+                {sec.questions.length > 0 && (
                   <div className="list-group list-group-flush">
                     {sec.questions.map(q => (
-                      <button key={q.questionNumber} className={`list-group-item list-group-item-action py-1 px-2 ${selected.sectionId===sec.sectionId && selected.questionNumber===q.questionNumber ? 'active' : ''}`}
-                        style={{ fontSize: '0.7rem' }} onClick={()=> setSelected({ sectionId: sec.sectionId, questionNumber: q.questionNumber })}>
-                        Q{q.questionNumber}: {(q.questionText||'').slice(0,30) || <span className="text-muted">(empty)</span>}
+                      <button key={q.questionNumber} className={`list-group-item list-group-item-action py-1 px-2 ${selected.sectionId === sec.sectionId && selected.questionNumber === q.questionNumber ? 'active' : ''}`}
+                        style={{ fontSize: '0.7rem' }} onClick={() => setSelected({ sectionId: sec.sectionId, questionNumber: q.questionNumber })}>
+                        Q{q.questionNumber}: {(q.questionText || '').slice(0, 30) || <span className="text-muted">(empty)</span>}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
             ))}
-            {draft.sections.length===0 && <div className="text-muted small">No sections</div>}
-        </div>
-        <div className="mt-auto d-flex flex-column gap-2 pt-2 border-top" style={{ borderColor:'var(--border)' }}>
-          <button className="btn btn-sm btn-outline-secondary" onClick={openJson}>JSON</button>
-          <button className="btn btn-sm btn-outline-secondary" onClick={()=> { setUploaderTarget({ kind:'question', optionIndex:null }); setUploader(true); }}>Images</button>
-          <button className="btn btn-sm btn-outline-secondary" onClick={()=> navigate(`/exam/manageCandidates?test_id=${encodeURIComponent(id)}`)}>Candidates</button>
-          <button className="btn btn-sm btn-outline-secondary" disabled={reloading} onClick={handleReload}>{reloading? 'Reloading…':'Reload Server'}</button>
-          <button className="btn btn-sm btn-primary" disabled={saving || !dirty} onClick={saveRemote}>{saving? 'Saving…' : 'Save Server'}</button>
-          {saveMsg && <div className="small" style={{ color: /fail|error/i.test(saveMsg)? 'var(--bs-danger)' : 'var(--muted)' }}>{saveMsg}</div>}
-        </div>
-      </aside>
-      {/* Main editor */}
-      <div className="exam-main">
+            {draft.sections.length === 0 && <div className="text-muted small">No sections</div>}
+          </div>
+          <div className="mt-auto d-flex flex-column gap-2 pt-2 border-top" style={{ borderColor: 'var(--border)' }}>
+            <button className="btn btn-sm btn-outline-secondary" onClick={openJson}>JSON</button>
+            <button className="btn btn-sm btn-outline-secondary" onClick={() => { setUploaderTarget({ kind: 'question', optionIndex: null }); setUploader(true); }}>Images</button>
+            <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate(`/exam/manageCandidates?test_id=${encodeURIComponent(id)}`)}>Candidates</button>
+            <button className="btn btn-sm btn-outline-secondary" disabled={reloading} onClick={handleReload}>{reloading ? 'Reloading…' : 'Reload Server'}</button>
+            <button className="btn btn-sm btn-primary" disabled={saving || !dirty} onClick={saveRemote}>{saving ? 'Saving…' : 'Save Server'}</button>
+            {saveMsg && <div className="small" style={{ color: /fail|error/i.test(saveMsg) ? 'var(--bs-danger)' : 'var(--muted)' }}>{saveMsg}</div>}
+          </div>
+        </aside>
+        {/* Main editor */}
+        <div className="exam-main">
           <div className="surface rounded-3 p-3 mb-3" style={{ border: '1px solid var(--border)' }}>
             <label className="form-label small mb-1">Test Title</label>
-            <input className="form-control form-control-sm" value={draft.title} onChange={(e)=> mutate(prev => ({ ...prev, title: e.target.value }))} />
+            <input className="form-control form-control-sm" value={draft.title} onChange={(e) => mutate(prev => ({ ...prev, title: e.target.value }))} />
           </div>
           {/* Section level editing when section selected and no question selected */}
           {selected.sectionId && !selected.questionNumber && (() => {
-            const sec = draft.sections.find(s => s.sectionId===selected.sectionId);
+            const sec = draft.sections.find(s => s.sectionId === selected.sectionId);
             if (!sec) return null;
             return (
-              <div className="surface rounded-3 p-3 mb-3" style={{ border:'1px solid var(--border)' }}>
+              <div className="surface rounded-3 p-3 mb-3" style={{ border: '1px solid var(--border)' }}>
                 <h3 className="h6 mb-3">Edit Section {sec.sectionId}</h3>
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label small">Title</label>
-                    <input className="form-control form-control-sm" value={sec.title} onChange={(e)=> updateSectionTitle(sec.sectionId, e.target.value)} />
+                    <input className="form-control form-control-sm" value={sec.title} onChange={(e) => updateSectionTitle(sec.sectionId, e.target.value)} />
                   </div>
                   <div className="col-md-3">
                     <label className="form-label small">Questions To Display</label>
-                    <input type="number" min={0} className="form-control form-control-sm" value={sec.questionsToDisplay} onChange={(e)=> updateSectionQty(sec.sectionId, parseInt(e.target.value||'0',10))} />
+                    <input type="number" min={0} className="form-control form-control-sm" value={sec.questionsToDisplay} onChange={(e) => updateSectionQty(sec.sectionId, parseInt(e.target.value || '0', 10))} />
                   </div>
                   <div className="col-md-3 d-flex align-items-end">
                     <div className="btn-group btn-group-sm w-100">
-                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s=> s.sectionId===sec.sectionId)===0} onClick={()=> moveSection(sec.sectionId,'up')}>↑</button>
-                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s=> s.sectionId===sec.sectionId)===draft.sections.length-1} onClick={()=> moveSection(sec.sectionId,'down')}>↓</button>
+                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s => s.sectionId === sec.sectionId) === 0} onClick={() => moveSection(sec.sectionId, 'up')}>↑</button>
+                      <button className="btn btn-outline-secondary" disabled={draft.sections.findIndex(s => s.sectionId === sec.sectionId) === draft.sections.length - 1} onClick={() => moveSection(sec.sectionId, 'down')}>↓</button>
                     </div>
                   </div>
                 </div>
@@ -507,9 +519,9 @@ export default function EditExam() {
                   <details className="inline-block relative">
                     <summary className="list-none cursor-pointer btn btn-sm btn-outline-primary">Add Question</summary>
                     <div className="absolute mt-2 min-w-40 rounded-lg border surface shadow-soft z-20">
-                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'mcq')}>MCQ</button>
-                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'msq')}>MSQ</button>
-                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={()=> addQuestion(sec.sectionId,'open-ended')}>Open-Ended</button>
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={() => addQuestion(sec.sectionId, 'mcq')}>MCQ</button>
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={() => addQuestion(sec.sectionId, 'msq')}>MSQ</button>
+                      <button type="button" className="block w-full text-left px-3 py-2 hover:bg-[color-mix(in_srgb,var(--bg-elev)_88%,transparent)]" onClick={() => addQuestion(sec.sectionId, 'open-ended')}>Open-Ended</button>
                     </div>
                   </details>
                 </div>
@@ -518,76 +530,86 @@ export default function EditExam() {
           })()}
           {/* Question editor */}
           {selected.sectionId && selected.questionNumber && (() => {
-            const sec = draft.sections.find(s => s.sectionId===selected.sectionId); if (!sec) return null;
-            const q = sec.questions.find(q => q.questionNumber===selected.questionNumber); if (!q) return null;
+            const sec = draft.sections.find(s => s.sectionId === selected.sectionId); if (!sec) return null;
+            const q = sec.questions.find(q => q.questionNumber === selected.questionNumber); if (!q) return null;
             return (
-              <div className="surface rounded-3 p-3" style={{ border:'1px solid var(--border)' }}>
+              <div className="surface rounded-3 p-3" style={{ border: '1px solid var(--border)' }}>
                 <div className="d-flex justify-content-between align-items-start mb-3">
                   <h3 className="h6 m-0">Section {sec.sectionId} • Question {q.questionNumber}</h3>
                   <div className="d-flex gap-2">
-                    <select className="form-select form-select-sm" value={q.type} onChange={(e)=> changeQuestionType(sec.sectionId, q.questionNumber, e.target.value)}>
-                      <option value="mcq">MCQ</option>
-                      <option value="msq">MSQ</option>
-                      <option value="open-ended">Open-Ended</option>
-                    </select>
+                    <Select
+                      value={q.type}
+                      onValueChange={(value) =>
+                        changeQuestionType(sec.sectionId, q.questionNumber, value)
+                      }
+                    >
+                      <SelectTrigger className="w-[180px] border-[color:var(--border)] bg-[var(--bg-elev)] text-[var(--text)]">
+                        <SelectValue placeholder="Select type">{questionTypeLabel(q.type)}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="border border-[color:var(--border)] bg-[var(--bg-elev)] text-[var(--text)] ring-[color:var(--border)]">
+                        <SelectItem className="focus:bg-[color-mix(in_srgb,var(--bg-elev)_82%,#0d6efd_18%)] focus:text-[var(--text)]" value="mcq">MCQ</SelectItem>
+                        <SelectItem className="focus:bg-[color-mix(in_srgb,var(--bg-elev)_82%,#0d6efd_18%)] focus:text-[var(--text)]" value="msq">MSQ</SelectItem>
+                        <SelectItem className="focus:bg-[color-mix(in_srgb,var(--bg-elev)_82%,#0d6efd_18%)] focus:text-[var(--text)]" value="open-ended">Open-Ended</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <div className="btn-group btn-group-sm">
-                      <button className="btn btn-outline-secondary" disabled={q.questionNumber===1} onClick={()=> moveQuestion(sec.sectionId, q.questionNumber,'up')}>↑</button>
-                      <button className="btn btn-outline-secondary" disabled={q.questionNumber===sec.questions.length} onClick={()=> moveQuestion(sec.sectionId, q.questionNumber,'down')}>↓</button>
+                      <button className="btn btn-outline-secondary" disabled={q.questionNumber === 1} onClick={() => moveQuestion(sec.sectionId, q.questionNumber, 'up')}>↑</button>
+                      <button className="btn btn-outline-secondary" disabled={q.questionNumber === sec.questions.length} onClick={() => moveQuestion(sec.sectionId, q.questionNumber, 'down')}>↓</button>
                     </div>
-                    <button className="btn btn-sm btn-outline-danger" onClick={()=> deleteQuestion(sec.sectionId, q.questionNumber)}>Delete</button>
+                    <button className="btn btn-sm btn-outline-danger" onClick={() => deleteQuestion(sec.sectionId, q.questionNumber)}>Delete</button>
                   </div>
                 </div>
                 <div className="row g-3 mb-3">
                   <div className="col-md-8">
                     <div className="d-flex justify-content-between align-items-center">
                       <label className="form-label small mb-0">Question Text</label>
-                      <button type="button" className="btn btn-xs btn-outline-secondary" onClick={()=> { setUploaderTarget({ kind:'question', optionIndex:null }); setUploader(true); }}>Insert Image</button>
+                      <button type="button" className="btn btn-xs btn-outline-secondary" onClick={() => { setUploaderTarget({ kind: 'question', optionIndex: null }); setUploader(true); }}>Insert Image</button>
                     </div>
-                    <textarea className="form-control" rows={3} value={q.questionText} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ questionText: e.target.value })} />
+                    <textarea className="form-control" rows={3} value={q.questionText} onChange={(e) => updateQuestion(sec.sectionId, q.questionNumber, { questionText: e.target.value })} />
                   </div>
                   <div className="col-md-2">
                     <label className="form-label small">+ Marks</label>
-                    <input type="number" className="form-control form-control-sm" value={q.successMarks} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ successMarks: parseFloat(e.target.value||'0') })} />
+                    <input type="number" className="form-control form-control-sm" value={q.successMarks} onChange={(e) => updateQuestion(sec.sectionId, q.questionNumber, { successMarks: parseFloat(e.target.value || '0') })} />
                   </div>
                   <div className="col-md-2">
                     <label className="form-label small">- Marks</label>
-                    <input type="number" className="form-control form-control-sm" value={q.failureMarks} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ failureMarks: parseFloat(e.target.value||'0') })} />
+                    <input type="number" className="form-control form-control-sm" value={q.failureMarks} onChange={(e) => updateQuestion(sec.sectionId, q.questionNumber, { failureMarks: parseFloat(e.target.value || '0') })} />
                   </div>
                 </div>
-                {q.type==='open-ended' && (
+                {q.type === 'open-ended' && (
                   <div className="mb-3">
                     <label className="form-label small">Model Answer</label>
-                    <textarea className="form-control" rows={2} value={q.modelAnswer||''} onChange={(e)=> updateQuestion(sec.sectionId, q.questionNumber,{ modelAnswer: e.target.value })} />
+                    <textarea className="form-control" rows={2} value={q.modelAnswer || ''} onChange={(e) => updateQuestion(sec.sectionId, q.questionNumber, { modelAnswer: e.target.value })} />
                   </div>
                 )}
-                {(q.type==='mcq' || q.type==='msq') && (
+                {(q.type === 'mcq' || q.type === 'msq') && (
                   <div className="mb-3">
                     <label className="form-label small d-block mb-2">Options</label>
                     <div className="vstack gap-2">
-                      {q.options.map((opt,oIdx)=>(
+                      {q.options.map((opt, oIdx) => (
                         <div key={oIdx} className="d-flex gap-2 align-items-center">
                           <div className="flex-grow-1 d-flex gap-1">
-                            <input className="form-control form-control-sm" value={opt} placeholder={`Option ${oIdx+1}`} onChange={(e)=> { const newOpts=[...q.options]; newOpts[oIdx]=e.target.value; updateQuestion(sec.sectionId,q.questionNumber,{ options:newOpts }); }} />
-                            <button type="button" className="btn btn-xs btn-outline-secondary" title="Insert image link" onClick={()=> { setUploaderTarget({ kind:'option', optionIndex:oIdx }); setUploader(true); }}>Img</button>
+                            <input className="form-control form-control-sm" value={opt} placeholder={`Option ${oIdx + 1}`} onChange={(e) => { const newOpts = [...q.options]; newOpts[oIdx] = e.target.value; updateQuestion(sec.sectionId, q.questionNumber, { options: newOpts }); }} />
+                            <button type="button" className="btn btn-xs btn-outline-secondary" title="Insert image link" onClick={() => { setUploaderTarget({ kind: 'option', optionIndex: oIdx }); setUploader(true); }}>Img</button>
                           </div>
-                          {q.type==='mcq' && (
-                            <input type="radio" name={`correct-${sec.sectionId}-${q.questionNumber}`} checked={q.correctOption===oIdx} onChange={()=> updateQuestion(sec.sectionId, q.questionNumber,{ correctOption:oIdx })} />
+                          {q.type === 'mcq' && (
+                            <input type="radio" name={`correct-${sec.sectionId}-${q.questionNumber}`} checked={q.correctOption === oIdx} onChange={() => updateQuestion(sec.sectionId, q.questionNumber, { correctOption: oIdx })} />
                           )}
-                          {q.type==='msq' && (
-                            <input type="checkbox" checked={Array.isArray(q.correctOptions)&&q.correctOptions.includes(oIdx)} onChange={(e)=> { let next = Array.isArray(q.correctOptions)? [...q.correctOptions]:[]; if(e.target.checked){ if(!next.includes(oIdx)) next.push(oIdx);} else { next = next.filter(i=> i!==oIdx); } updateQuestion(sec.sectionId, q.questionNumber,{ correctOptions: next }); }} />
+                          {q.type === 'msq' && (
+                            <input type="checkbox" checked={Array.isArray(q.correctOptions) && q.correctOptions.includes(oIdx)} onChange={(e) => { let next = Array.isArray(q.correctOptions) ? [...q.correctOptions] : []; if (e.target.checked) { if (!next.includes(oIdx)) next.push(oIdx); } else { next = next.filter(i => i !== oIdx); } updateQuestion(sec.sectionId, q.questionNumber, { correctOptions: next }); }} />
                           )}
                           {q.options.length > 2 && (
-                            <button className="btn btn-xs btn-outline-danger" title="Remove option" onClick={()=> {
-                              const newOpts = q.options.filter((_,i)=> i!==oIdx);
+                            <button className="btn btn-xs btn-outline-danger" title="Remove option" onClick={() => {
+                              const newOpts = q.options.filter((_, i) => i !== oIdx);
                               let patch = { options: newOpts };
-                              if (q.type==='mcq' && q.correctOption === oIdx) {
+                              if (q.type === 'mcq' && q.correctOption === oIdx) {
                                 patch.correctOption = -1; // unset
-                              } else if (q.type==='mcq' && q.correctOption > oIdx) {
+                              } else if (q.type === 'mcq' && q.correctOption > oIdx) {
                                 patch.correctOption = q.correctOption - 1; // shift after removal
                               }
-                              if (q.type==='msq') {
+                              if (q.type === 'msq') {
                                 if (Array.isArray(q.correctOptions)) {
-                                  let next = q.correctOptions.filter(ci=> ci!==oIdx).map(ci=> ci>oIdx? ci-1: ci);
+                                  let next = q.correctOptions.filter(ci => ci !== oIdx).map(ci => ci > oIdx ? ci - 1 : ci);
                                   patch.correctOptions = next;
                                 }
                               }
@@ -597,9 +619,9 @@ export default function EditExam() {
                         </div>
                       ))}
                       <div>
-                        <button className="btn btn-xs btn-outline-primary" onClick={()=> {
-                          const newOpts=[...q.options, ''];
-                          updateQuestion(sec.sectionId, q.questionNumber,{ options:newOpts });
+                        <button className="btn btn-xs btn-outline-primary" onClick={() => {
+                          const newOpts = [...q.options, ''];
+                          updateQuestion(sec.sectionId, q.questionNumber, { options: newOpts });
                         }}>+ Add Option</button>
                       </div>
                     </div>
@@ -629,8 +651,8 @@ export default function EditExam() {
       )}
       {uploader && (
         <UploaderModal
-          onClose={()=> setUploader(false)}
-          onInsert={(url)=> { insertImage(url); setUploader(false); }}
+          onClose={() => setUploader(false)}
+          onInsert={(url) => { insertImage(url); setUploader(false); }}
           hasQuestionSelected={!!(selected.sectionId && selected.questionNumber)}
         />
       )}
