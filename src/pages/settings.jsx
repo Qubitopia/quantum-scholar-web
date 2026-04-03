@@ -6,6 +6,13 @@ import { getCookie, setCookie, deleteCookie } from '../common/cookie.js';
 import { apiPut, apiPost, apiGet } from '../common/api.js';
 import { useNavigate } from 'react-router-dom';
 import { formatDate } from '../common/appUtils.js';
+import {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+} from "@/components/ui/select"
 
 const sections = [
     { id: 'profile', label: 'Profile', icon: FiUser },
@@ -85,15 +92,30 @@ function AppearancePanel() {
             <p style={{ color: 'var(--muted)' }}>Choose how QuantumScholar looks on this device.</p>
             <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <label className="form-label">Theme</label>
-                <select
-                    className="form-select"
-                    style={{ width: 160 }}
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}>
-                    <option value="system">System</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                </select>
+                <Select value={mode} onValueChange={setMode}>
+                    <SelectTrigger
+                        className="w-[180px]"
+                        style={{
+                            borderColor: 'var(--border)',
+                            backgroundColor: 'var(--bg-elev)',
+                            color: 'var(--text)'
+                        }}
+                    >
+                        <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent
+                        className="border"
+                        style={{
+                            borderColor: 'var(--border)',
+                            backgroundColor: 'var(--bg-elev)',
+                            color: 'var(--text)'
+                        }}
+                    >
+                        <SelectItem value="system">System</SelectItem>
+                        <SelectItem value="light">Light</SelectItem>
+                        <SelectItem value="dark">Dark</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
             {/* linebreak */}
             <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
@@ -400,7 +422,7 @@ function BillingPanel({ user, onUserUpdate }) {
                         <input type="number" min={1} className="form-control" value={coinsToBuy}
                             onChange={(e) => setCoinsToBuy(parseInt(e.target.value))} />
                     </div>
-                </div> 
+                </div>
                 <div className="d-flex gap-2 mt-3">
                     <button type="submit" className="btn btn-primary" disabled={loading || !user}>
                         {loading ? 'Processing…' : 'Buy with Razorpay'}

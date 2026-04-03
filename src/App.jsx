@@ -8,6 +8,7 @@ import ManageExam from './pages/exam/manageExam.jsx';
 import EditExam from './pages/exam/editExam.jsx';
 import ManageCandidates from './pages/exam/manageCandidates.jsx';
 import Temp from './pages/temp.jsx';
+import ViewExam from './pages/testPoral/viewExam.jsx';
 
 function App() {
   // Use HashRouter in production builds so opening `build/index.html`
@@ -27,6 +28,9 @@ function App() {
         <Route path="/exam/manageCandidates" element={<ManageCandidates />} />
         <Route path="/temp" element={<Temp />} />
         <Route path="*" element={<Home />} />
+        
+        {/* User */}
+        <Route path="/examPortal/viewExam" element={<ViewExam />} />
       </Routes>
     </Router>
   );

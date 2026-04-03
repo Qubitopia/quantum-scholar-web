@@ -51,8 +51,8 @@ const Home = () => {
                         {/* Primary CTAs */}
 
                         <div className="d-flex justify-content-center gap-3 mt-4 flex-nowrap">
-                            <Link to="/classroom" className="btn w-50 btn-primary rounded-pill px-4 py-3">
-                                Take Exam
+                            <Link to="/examPortal/viewExam" className="btn w-50 btn-primary rounded-pill px-4 py-3">
+                                Give Exam
                             </Link>
                             <Link to="/exam/manageExam" className="btn w-50 btn-primary rounded-pill px-4 py-3" onClick={() => console.log("Create Exam clicked")}>
                                 Create Exam
