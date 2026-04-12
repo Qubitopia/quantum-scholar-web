@@ -9,7 +9,7 @@ const styles = {
     navBrand: { display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text)' },
     navbarLogo: { width: '1.5rem', height: '1.5rem', display: 'flex', alignItems: 'center' },
     navbarTitle: { color: 'var(--text)', fontSize: '1.125rem', fontWeight: 'bold', lineHeight: '1.25', letterSpacing: '-0.015em', margin: 0 },
-    navbarLinksDiv1: { display: 'flex', flex: 1, justifyContent: 'flex-end', gap: '2rem' },
+    navbarLinksDiv1: { display: 'flex', justifyContent: 'flex-end', gap: '2rem' },
     navbarLinksDiv2: { display: 'flex', alignItems: 'center', gap: '2.25rem' },
     navLinks: { color: 'var(--text)', opacity: 0.9, fontSize: '0.95rem', fontWeight: 500, textDecoration: 'none', lineHeight: 'normal' },
     navbarLogin: { display: 'flex', minWidth: '84px', maxWidth: '480px', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: '9999px', height: '2.5rem', padding: '0 1rem', background: 'rgba(148,163,184,0.18)', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 'bold', lineHeight: 'normal', letterSpacing: '0.015em', textDecoration: 'none' },
@@ -37,20 +37,26 @@ function Navbar() {
         <>
             <header style={styles.navbar}>
                 <Link to='/' style={styles.navLinks}>
-                {/* <div style={styles.navBrand}>
+                <div style={styles.navBrand}>
                     <div style={styles.navbarLogo}>
                         <img src={logo} alt="QuantumScholar Logo" style={styles.logo} />
                     </div>
                     <h2 style={styles.navbarTitle}>QuantumScholar</h2>
-                </div> */}
+                </div>
                 </Link>
                 {/* Desktop nav */}
                 {/* center */}
-                <div className="hidden md:flex" style={styles.navbarLinksDiv1}>
+                <div className="hidden md:flex" style={{ flex: 1, justifyContent: 'center' }}>
                     <div style={styles.navbarLinksDiv2}>
                         <Link to="/" style={styles.navLinks}>Home</Link>
-                        <Link to="/exam/manageExam" style={styles.navLinks}>Manage Exams</Link>
-                        {isLoggedIn ? (
+                        <Link to="/exam/manageExam" style={styles.navLinks}>View Results</Link>
+                        
+                    </div>
+                    
+                </div>
+                <div className="hidden" style={styles.navbarLinksDiv1}>
+                    <div style={styles.navbarLinksDiv2}>   
+                    {isLoggedIn ? (
                             <Link to="/settings" aria-label="Open Settings" title="Settings" style={{ textDecoration: 'none' }}>
                                 <span style={styles.avatarBtn}>
                                     <FiUser size={18} />
@@ -64,8 +70,8 @@ function Navbar() {
                                 </span>
                             </Link>
                         )}
-                    </div>
-                    {!isLoggedIn && (
+                         </div>
+                         {!isLoggedIn && (
                         <Link to="/login" style={styles.navbarLogin}>
                             <span style={styles.navbarLoginHover}>Log In</span>
                         </Link>

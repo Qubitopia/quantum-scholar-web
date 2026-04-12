@@ -7,8 +7,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
     CalendarDays,
     ChartNoAxesColumn,
-    CircleUserRound,
-    ClipboardList,
     Clock3,
     FileText,
     GraduationCap,
@@ -19,11 +17,22 @@ import {
 } from 'lucide-react';
 import Navbar from '../../components/exam/navbar.jsx';
 
+const getExamField = (exam = {}, keys = []) => {
+    for (const key of keys) {
+        const value = exam?.[key];
+        if (value !== undefined && value !== null && value !== '') {
+            return value;
+        }
+    }
+    return undefined;
+};
 
 const getExamStatus = (exam = {}) => {
     const now = Date.now();
-    const start = exam?.test_start_time ? new Date(exam.test_start_time).getTime() : null;
-    const end = exam?.test_end_time ? new Date(exam.test_end_time).getTime() : null;
+    const startValue = getExamField(exam, ['TestStartTime', 'test_start_time']);
+    const endValue = getExamField(exam, ['TestEndTime', 'test_end_time']);
+    const start = startValue ? new Date(startValue).getTime() : null;
+    const end = endValue ? new Date(endValue).getTime() : null;
 
     if (typeof end === 'number' && end < now) return 'completed';
     if (typeof start === 'number' && start > now) return 'upcoming';
@@ -89,10 +98,11 @@ export default function ViewExam() {
             }, 1000);
             return () => clearInterval(timer);
         }
+
         setLoading(true);
         apiGet('/api/test-portal/assigned-tests', { token })
-            .then(res => setExams(res.data.tests || []))
-            .catch(err => {
+            .then((res) => setExams(res.data.tests || []))
+            .catch((err) => {
                 setError('No Exams Found');
                 console.error(err);
             })
@@ -104,15 +114,22 @@ export default function ViewExam() {
         ...exam,
         status: getExamStatus(exam),
     }));
+
     const filteredExams = selectedFilter === 'all'
         ? decoratedExams
         : decoratedExams.filter((exam) => exam.status === selectedFilter);
+
     const upcomingCount = decoratedExams.filter((exam) => exam.status === 'upcoming').length;
     const completedExams = decoratedExams.filter((exam) => exam.status === 'completed');
+
     const avgScore = completedExams.length
-        ? Math.round(completedExams.reduce((sum, exam) => sum + (Number(exam.total_marks) || 0), 0) / completedExams.length)
+        ? Math.round(completedExams.reduce((sum, exam) => sum + (Number(getExamField(exam, ['TotalMarks', 'total_marks'])) || 0), 0) / completedExams.length)
         : 88;
-    const totalCredits = decoratedExams.reduce((sum, exam) => sum + Math.max(0, Math.round((Number(exam.test_duration) || 0) / 3)), 0);
+
+    const totalCredits = decoratedExams.reduce(
+        (sum, exam) => sum + Math.max(0, Math.round((Number(getExamField(exam, ['TestDuration', 'test_duration'])) || 0) / 3)),
+        0
+    );
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020b21] dark:text-slate-100">
@@ -153,12 +170,20 @@ export default function ViewExam() {
                                 {filteredExams.map((exam, index) => {
                                     const isCompleted = exam.status === 'completed';
                                     const isUpcoming = exam.status === 'upcoming';
+                                    const examName = getExamField(exam, ['TestName', 'test_name']) || 'Untitled Exam';
+                                    const examStartTime = getExamField(exam, ['TestStartTime', 'test_start_time']);
+                                    const examEndTime = getExamField(exam, ['TestEndTime', 'test_end_time']);
+                                    const examDuration = Number(getExamField(exam, ['TestDuration', 'test_duration'])) || 0;
+                                    const attemptsRemaining = Number(getExamField(exam, ['AttemptsRemaining', 'attempts_remaining'])) || 0;
+                                    const attemptsAllotted = Number(getExamField(exam, ['AttemptsAlloted', 'AttemptsAllotted', 'attempts_alloted', 'attempts_allotted'])) || 0;
+                                    const totalMarks = Number(getExamField(exam, ['TotalMarks', 'total_marks'])) || 0;
+                                    const examId = getExamField(exam, ['TestID', 'test_id']);
                                     const iconTone = index % 2 === 0
                                         ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300'
                                         : 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300';
 
                                     return (
-                                        <Card key={exam.TestID || `${exam.TestName}-${index}`} className="border border-slate-900/60 bg-slate-100/70 dark:bg-slate-900/30 p-0 ">
+                                        <Card key={examId || `${examName}-${index}`} className="border border-slate-900/60 bg-slate-100/70 p-0 dark:bg-slate-900/30">
                                             <CardContent className="flex h-full flex-col p-5 text-slate-600 dark:text-slate-400">
                                                 <div className="mb-4 flex items-start justify-between">
                                                     <div className={`inline-flex size-9 items-center justify-center rounded-lg ${iconTone}`}>
@@ -168,20 +193,28 @@ export default function ViewExam() {
                                                         {exam.status}
                                                     </span>
                                                 </div>
-                                                <h3 className="min-h-12 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{exam.TestName || 'Untitled Exam'}</h3>
+
+                                                <h3 className="min-h-12 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{examName}</h3>
 
                                                 <div className="mt-4 space-y-2 text-sm text-slate-800 dark:text-slate-300">
-                                                    <div className="flex items-center gap-2"><CalendarDays className="size-4 text-slate-500 " />{formatExamDate(exam.TestStartTime)} to {formatExamDate(exam.TestEndTime)}</div>
-                                                    <div className="flex items-center gap-2"><Clock3 className="size-4 text-slate-500" />{exam.TestDuration || 0} Minutes</div>
-                                                    <div className="flex items-center gap-2"><FileText className="size-4 text-slate-500" />Attempts: {exam.AttemptsRemaining || 0} / {exam.AttemptsAlloted || 0}</div>
-                                                    {isCompleted && <div className="flex items-center gap-2 font-medium text-emerald-300"><GraduationCap className="size-4" />Grade: {exam.TotalMarks || 0}%</div>}
+                                                    <div className="flex items-center gap-2"><CalendarDays className="size-4 text-slate-500" />{formatExamDate(examStartTime)} to {formatExamDate(examEndTime)}</div>
+                                                    <div className="flex items-center gap-2"><Clock3 className="size-4 text-slate-500" />{examDuration} Minutes</div>
+                                                    <div className="flex items-center gap-2"><FileText className="size-4 text-slate-500" />Attempts: {attemptsRemaining} / {attemptsAllotted}</div>
+                                                    {isCompleted && <div className="flex items-center gap-2 font-medium text-emerald-300"><GraduationCap className="size-4" />Grade: {totalMarks}%</div>}
                                                 </div>
 
                                                 <Button
                                                     type="button"
                                                     variant="outline"
-                                                    onClick={() => navigate('/examPortal/viewExam')}
-                                                    className={`mt-6 w-full rounded-full border-slate-600/70 font-semibold ${isCompleted ? 'bg-slate-900/80 text-white hover:bg-slate-700' : 'bg-cyan-400 text-white hover:bg-gray-400' }`}												>
+                                                    onClick={() => {
+                                                        if (isCompleted) {
+                                                            navigate('/examPortal/viewExam');
+                                                            return;
+                                                        }
+                                                        navigate('/examPortal/startExam', { state: { exam } });
+                                                    }}
+                                                    className={`mt-6 w-full rounded-full border-slate-600/70 font-semibold ${isCompleted ? 'bg-slate-700/80 text-white hover:bg-slate-900/80 hover:text-white' : 'bg-cyan-500 text-white hover:bg-cyan-700 hover:text-white , dark:bg-cyan-400/80 dark:hover:bg-cyan-500/80'}`}
+                                                >
                                                     {isCompleted ? 'View Results' : isUpcoming ? 'View Details' : 'Start Exam'}
                                                 </Button>
                                             </CardContent>
@@ -238,4 +271,3 @@ export default function ViewExam() {
         </div>
     );
 }
-
