@@ -1,19 +1,24 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
+    AlertCircle,
     ArrowLeft,
     AudioLines,
     Camera,
     CircleCheckBig,
     Clock3,
+    Loader2,
     Network,
     ShieldCheck,
     Sparkles,
     Zap,
 } from 'lucide-react';
+import { getCookie } from '../../common/cookie.js';
+import { apiGet } from '../../common/api.js';
+
 
 
 const START_RULES = [
@@ -40,11 +45,6 @@ const getFirstDefinedValue = (source, keys) => {
     return undefined;
 };
 
-const toPositiveNumber = (value, fallback) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
-
 const formatExamTime = (value) => {
     if (!value) return 'To be announced';
     const date = new Date(value);
@@ -57,18 +57,73 @@ const formatExamTime = (value) => {
     });
 };
 
-
 export default function StartExam() {
     const navigate = useNavigate();
     const { state } = useLocation();
-    console.log('Received state in StartExam:', state.exam);
     const exam = state?.exam;
+    const [starting, setStarting] = useState(false);
+    const [startError, setStartError] = useState('');
+
+    const examId = getFirstDefinedValue(exam, ['TestID', 'test_id', 'id']);
+    const examTitle = getFirstDefinedValue(exam, ['title', 'TestName', 'test_name']) || 'Untitled Exam';
+    const examDuration = getFirstDefinedValue(exam, ['TestDuration', 'test_duration']) || '--';
+    const totalMarks = getFirstDefinedValue(exam, ['TotalMarks', 'total_marks']) || '--';
+    const attemptsAlloted = getFirstDefinedValue(exam, ['AttemptsAlloted', 'AttemptsAllotted', 'attempts_alloted', 'attempts_allotted']) || '--';
+    const attemptsRemaining = getFirstDefinedValue(exam, ['AttemptsRemaining', 'attempts_remaining']) || '--';
+
+    const beginExam = async () => {
+        if (!examId) {
+            setStartError('Exam metadata is missing. Please re-open this exam from dashboard.');
+            return;
+        }
+
+        const token = getCookie('qs-token');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
+        try {
+            setStarting(true);
+            setStartError('');
+
+            const response = await apiGet(`/api/test-portal/start/${encodeURIComponent(examId)}`, { token });
+            const startPayload = response?.data || {};
+
+            navigate('/examPortal/session', {
+                state: {
+                    exam,
+                    startPayload,
+                    attemptId: getFirstDefinedValue(startPayload, ['answer_attempt_id', 'attempt_id']),
+                },
+            });
+        } catch (error) {
+            setStartError(error?.response?.data?.message || error?.message || 'Unable to start exam attempt');
+        } finally {
+            setStarting(false);
+        }
+    };
 
     const readinessItems = useMemo(() => ([
         { label: 'Camera Access', icon: Camera, state: 'Ready' },
         { label: 'Audio Hardware', icon: AudioLines, state: 'Ready' },
         { label: 'Network Latency', icon: Network, state: 'Optimum' },
     ]), []);
+
+    if (!exam) {
+        return (
+            <div className="min-h-screen bg-[#010814] text-slate-100 flex items-center justify-center p-6">
+                <div className="w-full max-w-xl rounded-2xl border border-rose-400/35 bg-rose-950/30 p-6">
+                    <div className="flex items-center gap-2 text-rose-100">
+                        <AlertCircle className="size-5" />
+                        <h1 className="text-lg font-semibold">No exam selected</h1>
+                    </div>
+                    <p className="mt-2 text-sm text-rose-100/90">Please select an exam from the dashboard and try again.</p>
+                    <Button className="mt-5" onClick={() => navigate('/examPortal/viewExam')}>Back to Exams</Button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="relative min-h-screen overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#010814] dark:text-slate-100">
@@ -94,16 +149,16 @@ export default function StartExam() {
                                 <Card className="overflow-hidden rounded-[1.6rem] border border-slate-200 bg-white/85 shadow-[0_24px_60px_-26px_rgba(2,6,23,0.55)] backdrop-blur dark:border-slate-700/40 dark:bg-[#0c1632]/95 dark:shadow-[0_30px_100px_-34px_rgba(56,189,248,0.6)]">
                                     <CardContent className="p-7 md:p-8">
                                         <p className="text-xs font-semibold tracking-[0.2em] text-cyan-700 uppercase dark:text-cyan-300">Exam Confirmation</p>
-                                        <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 md:text-5xl">{exam.title}</h1>
+                                        <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 md:text-5xl">{examTitle}</h1>
 
                                         <div className="mt-5 grid gap-3 sm:grid-cols-3">
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 dark:border-slate-700/60 dark:bg-slate-900/40">
                                                 <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase dark:text-slate-400">Duration</p>
-                                                <p className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100"><Clock3 className="size-4 text-cyan-600 dark:text-cyan-300" />{exam.TestDuration} Minutes</p>
+                                                <p className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100"><Clock3 className="size-4 text-cyan-600 dark:text-cyan-300" />{examDuration} Minutes</p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 dark:border-slate-700/60 dark:bg-slate-900/40">
                                                 <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase dark:text-slate-400">Total Marks</p>
-                                                <p className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100"><Sparkles className="size-4 text-indigo-600 dark:text-indigo-300" />{state.exam.TotalMarks}</p>
+                                                <p className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100"><Sparkles className="size-4 text-indigo-600 dark:text-indigo-300" />{totalMarks}</p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 dark:border-slate-700/60 dark:bg-slate-900/40">
                                                 <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase dark:text-slate-400">Pass Grade</p>
@@ -126,7 +181,7 @@ export default function StartExam() {
                                         </div>
 
                                         <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-600 dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-300">
-                                            Scheduled Window: <strong className="font-semibold text-slate-900 dark:text-slate-100">{formatExamTime(exam.TestStartTime)}</strong> to <strong className="font-semibold text-slate-900 dark:text-slate-100">{formatExamTime(exam.TestEndTime)}</strong>
+                                            Scheduled Window: <strong className="font-semibold text-slate-900 dark:text-slate-100">{formatExamTime(getFirstDefinedValue(exam, ['TestStartTime', 'test_start_time']))}</strong> to <strong className="font-semibold text-slate-900 dark:text-slate-100">{formatExamTime(getFirstDefinedValue(exam, ['TestEndTime', 'test_end_time']))}</strong>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -156,20 +211,35 @@ export default function StartExam() {
                                             <p className="text-[11px] font-semibold tracking-[0.14em] text-cyan-300 uppercase">Subject Code</p>
                                             <p className="mt-1 text-sm font-medium text-slate-100 flex items-center gap-2">
                                                 <span className="px-2 py-0.5 text-xs rounded-md bg-slate-700 text-slate-200">
-                                                    #{state.exam.TestID}
+                                                    #{examId}
                                                 </span>
-                                                <span>{state.exam.TestName}</span>
+                                                <span>{getFirstDefinedValue(exam, ['TestName', 'test_name']) || examTitle}</span>
                                             </p>                                            <br />
-                                            <p className="mt-1 text-sm font-medium text-slate-100">Attempt: {state.exam.AttemptsAlloted} / {state.exam.AttemptsRemaining}</p>
+                                            <p className="mt-1 text-sm font-medium text-slate-100">Attempt: {attemptsAlloted} / {attemptsRemaining}</p>
                                         </CardContent>
                                     </Card>
 
+                                    {startError && (
+                                        <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                                            {startError}
+                                        </div>
+                                    )}
+
                                     <Button
                                         type="button"
-                                        onClick={() => navigate('/examPortal/viewExam')}
+                                        onClick={() => void beginExam()}
+                                        disabled={starting}
                                         className="h-14 w-full rounded-full border border-cyan-300/70 bg-cyan-400 text-lg font-semibold text-slate-900 shadow-[0_14px_34px_-20px_rgba(34,211,238,0.95)] hover:bg-cyan-300"
                                     >
-                                        Begin Examination <Zap className="size-5" />
+                                        {starting ? (
+                                            <>
+                                                <Loader2 className="size-5 animate-spin" /> Starting...
+                                            </>
+                                        ) : (
+                                            <>
+                                                Begin Examination <Zap className="size-5" />
+                                            </>
+                                        )}
                                     </Button>
 
                                     <p className="text-center text-[11px] font-medium tracking-wide text-slate-600 dark:text-slate-400">

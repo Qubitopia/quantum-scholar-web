@@ -147,7 +147,7 @@ function ProfilePanel({ user, onUserUpdate }) {
         deleteCookie('qs-user', { path: '/' });
         deleteCookie('qs-token', { path: '/' });
         localStorage.removeItem('qs-user');
-
+        localStorage.removeItem('qs-token');
     };
 
     const save = async (e) => {
@@ -156,7 +156,7 @@ function ProfilePanel({ user, onUserUpdate }) {
         setErr('');
         try {
             const token = getCookie('qs-token');
-            await apiPut('/api/profile', { name, birth_date: birth }, { token });
+            await apiPut('/api/profile', { name, birthdate: birth+"T00:00:00Z" }, { token });
             await loadData(token).then((profile) => {
                 if (profile) {
                     onUserUpdate && onUserUpdate(profile);
@@ -473,7 +473,15 @@ function AdvancedPanel() {
     return (
         <section>
             <h2 className="h5 fw-bold mb-3">Advanced</h2>
-            <button className="btn btn-outline-danger">Clear cached data</button>
+            <button className="btn btn-outline-danger" onClick={()=>{
+                if (window.confirm('Are you sure you want to clear cached data? This will log you out and reset all settings.')) {
+                    deleteCookie('qs-user', { path: '/' });
+                    deleteCookie('qs-token', { path: '/' });
+                    localStorage.removeItem('qs-user');
+                    localStorage.removeItem('qs-token');
+                    window.location.reload();
+                }
+            }}>Clear cached data</button>
         </section>
     );
 }

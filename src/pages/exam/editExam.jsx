@@ -303,6 +303,7 @@ export default function EditExam() {
         }))
       });
       const payload = { test_id: Number(id), test: transform(draft) };
+      console.log('Saving payload', payload);
       await apiPut('/api/test/update-que-ans', payload, { token });
       setSaveMsg('Saved to server');
       setDirty(false);

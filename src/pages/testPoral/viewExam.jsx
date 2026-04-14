@@ -50,7 +50,7 @@ const MOCK_EXAMS = [
     {
         test_id: 'mock-1',
         test_name: 'Introduction to Quantum Physics',
-        test_duration: 120,
+        test_duration: 60,
         number_of_questions_per_test: 50,
         test_start_time: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
         test_end_time: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
