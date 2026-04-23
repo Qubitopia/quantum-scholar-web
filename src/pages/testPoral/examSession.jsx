@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, CheckCircle2, Clock3, Flag } from 'lucide-react';
@@ -6,6 +7,10 @@ import { apiPost } from '../../common/api.js';
 import { getCookie } from '../../common/cookie.js';
 
 const STORAGE_PREFIX = 'qs-test-attempt-';
+const FOCUS_VIOLATION_COOLDOWN_MS = 1200;
+const MAX_FOCUS_WARNINGS = 3;
+const HEALTH_CHECK_INTERVAL_MS = 60 * 1000;
+const HEALTH_ENDPOINT = 'http://localhost:8080/health';
 
 const getValue = (source, keys = []) => {
     for (const key of keys) {
@@ -379,8 +384,86 @@ export default function ExamSession() {
     const [submitMessage, setSubmitMessage] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
+    const [isFullscreen, setIsFullscreen] = useState(() => (
+        typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false
+    ));
+    const [fullscreenSupported] = useState(() => (
+        typeof document !== 'undefined' && Boolean(document.documentElement?.requestFullscreen)
+    ));
+    const [fullscreenMessage, setFullscreenMessage] = useState('');
+    const [focusViolations, setFocusViolations] = useState(0);
+    const [healthCheckState, setHealthCheckState] = useState({
+        checking: false,
+        status: 'unknown',
+        message: 'Health check pending',
+        lastCheckedAt: null,
+    });
+
     const autoSubmittedRef = useRef(false);
     const submitInFlightRef = useRef(false);
+    const violationCooldownRef = useRef(0);
+    const hadFullscreenRef = useRef(false);
+    const focusViolationCountRef = useRef(0);
+    const warningAlertOpenRef = useRef(false);
+    const awaitingRecoveryRef = useRef(false);
+    const previousFullscreenRef = useRef(
+        typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false
+    );
+
+    const requestFullscreenMode = useCallback(async () => {
+        if (typeof document === 'undefined') return false;
+
+        const rootElement = document.documentElement;
+        if (!rootElement?.requestFullscreen) {
+            setFullscreenMessage('Fullscreen mode is not supported in this browser.');
+            return false;
+        }
+
+        if (document.fullscreenElement) {
+            setIsFullscreen(true);
+            setFullscreenMessage('');
+            return true;
+        }
+
+        try {
+            await rootElement.requestFullscreen();
+            setIsFullscreen(true);
+            setFullscreenMessage('');
+            return true;
+        } catch {
+            setFullscreenMessage('Fullscreen is required. Click "Enter Fullscreen" to continue.');
+            return false;
+        }
+    }, []);
+
+    const runHardwareHealthCheck = useCallback(async () => {
+        if (!attemptId || !token) return false;
+
+        setHealthCheckState((prev) => ({ ...prev, checking: true }));
+
+        try {
+            const res = await axios.get(HEALTH_ENDPOINT, { timeout: 8000 });
+            const serviceStatus = String(res?.data?.status || '').toUpperCase();
+            const isOk = serviceStatus === 'OK';
+
+            setHealthCheckState({
+                checking: false,
+                status: isOk ? 'ok' : 'issue',
+                message: isOk ? 'System is perfect' : `Health status: ${serviceStatus || 'UNKNOWN'}`,
+                lastCheckedAt: Date.now(),
+            });
+
+            return isOk;
+        } catch (error) {
+            setHealthCheckState({
+                checking: false,
+                status: 'issue',
+                message: `Health check failed: ${error?.message || 'Unknown error'}`,
+                lastCheckedAt: Date.now(),
+            });
+            return false;
+        }
+    }, [attemptId, token]);
 
     useEffect(() => {
         if (!token) {
@@ -521,6 +604,203 @@ export default function ExamSession() {
             state: { autoSubmitted: auto, attemptId },
         });
     }, [attemptId, navigate, storageKey, syncAnswers]);
+
+    const blockExamSession = useCallback(async (reason) => {
+        if (submitInFlightRef.current) return;
+
+        submitInFlightRef.current = true;
+        setSubmitting(true);
+        setSubmitMessage(reason);
+
+        await syncAnswers({ sendAll: true, silent: true });
+
+        if (storageKey) {
+            sessionStorage.removeItem(storageKey);
+        }
+
+        if (typeof window !== 'undefined') {
+            warningAlertOpenRef.current = true;
+            try {
+                window.alert(reason);
+            } finally {
+                warningAlertOpenRef.current = false;
+            }
+        }
+
+        submitInFlightRef.current = false;
+        setSubmitting(false);
+
+        navigate('/examPortal/viewExam', {
+            replace: true,
+            state: {
+                blockedByProctor: true,
+                blockedReason: reason,
+                attemptId,
+            },
+        });
+    }, [attemptId, navigate, storageKey, syncAnswers]);
+
+    const handleFocusViolation = useCallback(async (message) => {
+        if (submitInFlightRef.current || warningAlertOpenRef.current || awaitingRecoveryRef.current || !attemptId || !token) return;
+
+        const now = Date.now();
+        if (now - violationCooldownRef.current < FOCUS_VIOLATION_COOLDOWN_MS) return;
+        violationCooldownRef.current = now;
+        awaitingRecoveryRef.current = true;
+
+        const nextWarnings = focusViolationCountRef.current + 1;
+        focusViolationCountRef.current = nextWarnings;
+        setFocusViolations(nextWarnings);
+
+        const reason = message || 'Tab or app switching detected during exam.';
+        const warningsLeft = Math.max(0, MAX_FOCUS_WARNINGS - nextWarnings);
+
+        if (warningsLeft > 0) {
+            const warningText = `${reason}\nWarning ${nextWarnings}/${MAX_FOCUS_WARNINGS}. ${warningsLeft} warning${warningsLeft === 1 ? '' : 's'} left before exam is blocked.`;
+            setSubmitMessage(`Warning ${nextWarnings}/${MAX_FOCUS_WARNINGS}: ${reason}`);
+
+            if (typeof window !== 'undefined') {
+                warningAlertOpenRef.current = true;
+                try {
+                    window.alert(warningText);
+                } finally {
+                    warningAlertOpenRef.current = false;
+                }
+            }
+
+            if (fullscreenSupported) {
+                await requestFullscreenMode();
+            }
+
+            if (typeof document !== 'undefined') {
+                const recoveredNow = (
+                    document.visibilityState === 'visible'
+                    && document.hasFocus()
+                    && (!fullscreenSupported || Boolean(document.fullscreenElement))
+                );
+
+                if (recoveredNow) {
+                    awaitingRecoveryRef.current = false;
+                }
+            }
+            return;
+        }
+
+        await blockExamSession(`Exam blocked during exam. Reason: ${reason}`);
+    }, [attemptId, blockExamSession, fullscreenSupported, requestFullscreenMode, token]);
+
+    useEffect(() => {
+        if (!fullscreenSupported) return;
+        void requestFullscreenMode();
+    }, [fullscreenSupported, requestFullscreenMode]);
+
+    useEffect(() => {
+        if (typeof document === 'undefined') return undefined;
+
+        const onFullscreenChange = () => {
+            const active = Boolean(document.fullscreenElement);
+            setIsFullscreen(active);
+
+            if (active) {
+                hadFullscreenRef.current = true;
+                setFullscreenMessage('');
+            } else if (fullscreenSupported) {
+                setFullscreenMessage('Fullscreen is required for this exam.');
+            }
+        };
+
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        onFullscreenChange();
+
+        return () => {
+            document.removeEventListener('fullscreenchange', onFullscreenChange);
+        };
+    }, [fullscreenSupported]);
+
+    useEffect(() => {
+        const wasFullscreen = previousFullscreenRef.current;
+        previousFullscreenRef.current = isFullscreen;
+
+        if (!fullscreenSupported || !hadFullscreenRef.current) return;
+        if (!wasFullscreen || isFullscreen) return;
+
+        if (typeof document !== 'undefined') {
+            if (document.visibilityState !== 'visible' || !document.hasFocus()) {
+                return;
+            }
+        }
+
+        void handleFocusViolation('Fullscreen mode was exited during exam.');
+    }, [fullscreenSupported, handleFocusViolation, isFullscreen]);
+
+    useEffect(() => {
+        if (!attemptId || !token) return undefined;
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                void handleFocusViolation('Tab or app switching detected during exam.');
+                return;
+            }
+
+            if (!fullscreenSupported || Boolean(document.fullscreenElement)) {
+                awaitingRecoveryRef.current = false;
+            }
+        };
+
+        const onWindowBlur = () => {
+            if (document.visibilityState === 'visible') {
+                void handleFocusViolation('Window focus was lost during exam.');
+            }
+        };
+
+        const onWindowFocus = () => {
+            if (!fullscreenSupported || Boolean(document.fullscreenElement)) {
+                awaitingRecoveryRef.current = false;
+            }
+        };
+
+        const onKeyDown = (event) => {
+            const key = String(event.key || '').toLowerCase();
+            const ctrlOrMeta = event.ctrlKey || event.metaKey;
+
+            const isTabCycle = event.ctrlKey && key === 'tab';
+            const isBrowserTabShortcut = ctrlOrMeta && (key === 't' || key === 'w' || key === 'n');
+            const isRefreshShortcut = ctrlOrMeta && key === 'r';
+            const isFullscreenToggle = key === 'f11';
+
+            if (isTabCycle || isBrowserTabShortcut || isRefreshShortcut || isFullscreenToggle) {
+                event.preventDefault();
+                void handleFocusViolation('Blocked tab/window switching shortcut detected during exam.');
+            }
+        };
+
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('focus', onWindowFocus);
+        window.addEventListener('keydown', onKeyDown, true);
+
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            window.removeEventListener('blur', onWindowBlur);
+            window.removeEventListener('focus', onWindowFocus);
+            window.removeEventListener('keydown', onKeyDown, true);
+        };
+    }, [attemptId, fullscreenSupported, handleFocusViolation, token]);
+
+    useEffect(() => {
+        if (!attemptId || !token) return undefined;
+
+        const timer = window.setInterval(() => {
+            void runHardwareHealthCheck();
+        }, HEALTH_CHECK_INTERVAL_MS);
+
+        return () => window.clearInterval(timer);
+    }, [attemptId, runHardwareHealthCheck, token]);
+
+    useEffect(() => {
+        if (!attemptId || !token) return;
+        void runHardwareHealthCheck();
+    }, [attemptId, currentPosition.questionIndex, currentPosition.sectionNumber, runHardwareHealthCheck, token]);
 
     useEffect(() => {
         if (timeLeftMs > 0 || autoSubmittedRef.current) return;
@@ -727,9 +1007,31 @@ export default function ExamSession() {
     const lastSyncedText = syncState.lastSyncedAt
         ? new Date(syncState.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         : 'Not synced yet';
+    const lastHealthCheckText = healthCheckState.lastCheckedAt
+        ? new Date(healthCheckState.lastCheckedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : 'Not checked yet';
+    const warningsLeft = Math.max(0, MAX_FOCUS_WARNINGS - focusViolations);
 
     return (
         <div className="min-h-screen bg-[#020b21] text-slate-100">
+            {fullscreenSupported && !isFullscreen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020b21]/95 p-4">
+                    <div className="w-full max-w-md rounded-2xl border border-amber-300/30 bg-[#081631] p-6 text-center">
+                        <AlertCircle className="mx-auto mb-3 size-8 text-amber-200" />
+                        <h2 className="text-lg font-semibold text-slate-100">Fullscreen Required</h2>
+                        <p className="mt-2 text-sm text-slate-300">
+                            Keep this exam in fullscreen. Tab or app switching gives 3 warnings, then blocks the exam.
+                        </p>
+                        {fullscreenMessage && (
+                            <p className="mt-2 text-xs text-amber-200">{fullscreenMessage}</p>
+                        )}
+                        <Button className="mt-5 w-full" onClick={() => { void requestFullscreenMode(); }}>
+                            Enter Fullscreen
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             <header className="border-b border-cyan-300/15 bg-[#06122e]">
                 <div className="mx-auto flex w-full max-w-[1300px] flex-wrap items-center justify-between gap-3 px-4 py-4 lg:px-6">
                     <div className="min-w-0">
@@ -743,6 +1045,11 @@ export default function ExamSession() {
                         <div className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-200">
                             Progress {progressLabel}
                         </div>
+                        {fullscreenSupported && (
+                            <div className={`rounded-full border px-4 py-2 text-sm font-semibold ${isFullscreen ? 'border-emerald-300/45 bg-emerald-400/15 text-emerald-100' : 'border-amber-300/45 bg-amber-500/15 text-amber-100'}`}>
+                                {isFullscreen ? 'Fullscreen On' : 'Fullscreen Off'}
+                            </div>
+                        )}
                         <div className={`rounded-full border px-4 py-2 text-sm font-semibold ${timerWarning ? 'border-rose-300/50 bg-rose-500/20 text-rose-100' : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100'}`}>
                             <Clock3 className="mr-1 inline size-4" />{formatTimer(timeLeftMs)}
                         </div>
@@ -823,6 +1130,17 @@ export default function ExamSession() {
 
                     <div className="mt-5 rounded-xl border border-slate-500/40 bg-slate-800/40 p-3 text-xs text-slate-200">
                         <p>Last sync: {lastSyncedText}</p>
+                        {fullscreenSupported && (
+                            <p className="mt-2">Fullscreen: {isFullscreen ? 'Active' : 'Required'}</p>
+                        )}
+                        <p className={`mt-2 ${healthCheckState.status === 'ok' ? 'text-emerald-200' : 'text-amber-200'}`}>
+                            Hardware health: {healthCheckState.status === 'ok' ? 'System is perfect' : healthCheckState.message}
+                            {healthCheckState.checking ? ' (checking...)' : ''}
+                        </p>
+                        <p className="mt-2">Health checked at: {lastHealthCheckText}</p>
+                        {focusViolations > 0 && (
+                            <p className="mt-2 text-amber-200">Warnings used: {focusViolations}/{MAX_FOCUS_WARNINGS} (left: {warningsLeft})</p>
+                        )}
                         {syncState.error && (
                             <p className="mt-2 text-rose-200">{syncState.error}</p>
                         )}

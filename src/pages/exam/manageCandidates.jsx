@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { apiGet, apiPost, apiPut } from '../../common/api.js';
+import { apiGet, apiPut } from '../../common/api.js';
 import { getCookie, setCookie } from '../../common/cookie.js';
+import AlertDialogConfirmation2 from '../../components/alert-dialog-confirmation-2';
 
 // Utility to read query param
 function useQuery() {
@@ -25,6 +26,8 @@ export default function ManageCandidates() {
   const [refreshing, setRefreshing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState([]);
+  const [evaluating, setEvaluating] = useState(false);
+  const [evaluated, setEvaluated] = useState(false);
 
   const load = async () => {
     setRefreshing(true);
@@ -34,6 +37,15 @@ export default function ManageCandidates() {
       setErr('');
       const res = await apiGet(`/api/test/${encodeURIComponent(testId)}/candidates`, { token });
       setCandidates(res?.data?.candidates || []);
+
+      const isEvaluatedFromApi =
+        res?.data?.is_evaluated ??
+        res?.data?.evaluated ??
+        res?.data?.isEvaluated;
+
+      if (typeof isEvaluatedFromApi === 'boolean') {
+        setEvaluated(isEvaluatedFromApi);
+      }
     } catch (e) {
       console.error(e); setErr(e?.response?.data?.message || e.message || 'Load failed');
     } finally {
@@ -85,6 +97,26 @@ export default function ManageCandidates() {
     setSelectedEmails(prev => prev.includes(email) ? prev.filter(e => e!==email) : [...prev, email]);
   };
 
+  const evaluateTest = async () => {
+    if (!testId || evaluated) return;
+
+    setEvaluating(true);
+    setSavingMsg('');
+
+    try {
+      await apiGet(`/api/test/evaluate/${encodeURIComponent(testId)}`, { token });
+      setEvaluated(true);
+      setSavingMsg('Evaluation started. This can take some time. Candidate additions and re-evaluation are now locked.');
+      await load();
+    } catch (e) {
+      console.error(e);
+      setSavingMsg(e?.response?.data?.message || e?.message || 'Evaluation failed');
+    } finally {
+      setEvaluating(false);
+      setTimeout(()=> setSavingMsg(''), 5000);
+    }
+  };
+
   if (loading) return <div className="container py-4">Loading candidates…</div>;
 
   return (
@@ -94,9 +126,26 @@ export default function ManageCandidates() {
         <div className="d-flex gap-2">
           <button className="btn btn-sm btn-outline-secondary" onClick={()=> navigate(`/exam/editExam?test_id=${encodeURIComponent(testId)}`)}>Back to Test</button>
           <button className="btn btn-sm btn-outline-secondary" disabled={refreshing} onClick={load}>{refreshing? 'Refreshing…':'Refresh'}</button>
+          <AlertDialogConfirmation2
+            onContinue={evaluateTest}
+            evaluating={evaluating}
+            triggerDisabled={evaluating || evaluated}
+          />
         </div>
       </div>
       {err && <div className="alert alert-danger py-2 small">{err}</div>}
+      {evaluated && (
+        <div
+          className="alert py-2 small"
+          style={{
+            borderColor: '#f59e0b',
+            background: 'color-mix(in srgb, #f59e0b 14%, transparent)',
+            color: 'var(--text)',
+          }}
+        >
+          This test has been evaluated. Adding new candidates and re-evaluation are disabled.
+        </div>
+      )}
 
       <div className="col g-3">
         <div className="col-md-17">
@@ -136,13 +185,13 @@ export default function ManageCandidates() {
           <div className="surface p-3 rounded-3 mb-3" style={{ border:'1px solid var(--border)' }}>
             <h2 className="h6">Add Candidates</h2>
             <div className="mb-2 small" style={{ color:'var(--muted)' }}>Enter emails separated by commas or new lines.</div>
-            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e=> setEmailsText(e.target.value)} placeholder="candidate1@example.com,candidate2@example.com" />
+            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e=> setEmailsText(e.target.value)} placeholder="candidate1@example.com,candidate2@example.com" disabled={evaluated} />
             <div className="d-flex gap-2 align-items-end mb-2">
               <div>
                 <label className="form-label small mb-1">Attempts</label>
-                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value))} />
+                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value))} disabled={evaluated} />
               </div>
-              <button className="btn btn-sm btn-primary mt-auto" disabled={adding} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
+              <button className="btn btn-sm btn-primary mt-auto" disabled={adding || evaluated} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
             </div>
             {savingMsg && <div className="small" style={{ color:/fail|error/i.test(savingMsg)?'var(--bs-danger)':'var(--muted)' }}>{savingMsg}</div>}
           </div>
