@@ -49,7 +49,7 @@ function Navbar() {
                 <div className="hidden md:flex" style={{ flex: 1, justifyContent: 'center' }}>
                     <div style={styles.navbarLinksDiv2}>
                         <Link to="/" style={styles.navLinks}>Home</Link>
-                        <Link to="/exam/manageExam" style={styles.navLinks}>View Results</Link>
+                        <Link to="/examPortal/viewResult" style={styles.navLinks}>View Results</Link>
                         
                     </div>
                     

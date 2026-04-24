@@ -37,7 +37,6 @@ export default function ManageCandidates() {
       setErr('');
       const res = await apiGet(`/api/test/${encodeURIComponent(testId)}/candidates`, { token });
       setCandidates(res?.data?.candidates || []);
-
       const isEvaluatedFromApi =
         res?.data?.is_evaluated ??
         res?.data?.evaluated ??
@@ -53,11 +52,11 @@ export default function ManageCandidates() {
     }
   };
 
-  useEffect(()=> {
+  useEffect(() => {
     if (!token) { navigate('/login'); return; }
     if (!testId) { navigate('/exam/manageExam'); return; }
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testId, token]);
 
   const addCandidates = async () => {
@@ -73,7 +72,7 @@ export default function ManageCandidates() {
     } catch (e) {
       console.error(e); setSavingMsg(e?.response?.data?.message || 'Add failed');
     } finally {
-      setAdding(false); setTimeout(()=> setSavingMsg(''), 4000);
+      setAdding(false); setTimeout(() => setSavingMsg(''), 4000);
     }
   };
 
@@ -89,12 +88,12 @@ export default function ManageCandidates() {
     } catch (e) {
       console.error(e); setSavingMsg(e?.response?.data?.message || 'Remove failed');
     } finally {
-      setRemoving(false); setTimeout(()=> setSavingMsg(''), 4000);
+      setRemoving(false); setTimeout(() => setSavingMsg(''), 4000);
     }
   };
 
   const toggleSelect = (email) => {
-    setSelectedEmails(prev => prev.includes(email) ? prev.filter(e => e!==email) : [...prev, email]);
+    setSelectedEmails(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]);
   };
 
   const evaluateTest = async () => {
@@ -113,19 +112,19 @@ export default function ManageCandidates() {
       setSavingMsg(e?.response?.data?.message || e?.message || 'Evaluation failed');
     } finally {
       setEvaluating(false);
-      setTimeout(()=> setSavingMsg(''), 5000);
+      setTimeout(() => setSavingMsg(''), 5000);
     }
   };
 
   if (loading) return <div className="container py-4">Loading candidates…</div>;
 
   return (
-    <div className="container py-3" style={{ color:'var(--text)' }}>
+    <div className="container py-3" style={{ color: 'var(--text)' }}>
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h1 className="h6 m-0">Manage Candidates • Test #{testId}</h1>
         <div className="d-flex gap-2">
-          <button className="btn btn-sm btn-outline-secondary" onClick={()=> navigate(`/exam/editExam?test_id=${encodeURIComponent(testId)}`)}>Back to Test</button>
-          <button className="btn btn-sm btn-outline-secondary" disabled={refreshing} onClick={load}>{refreshing? 'Refreshing…':'Refresh'}</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate(`/exam/editExam?test_id=${encodeURIComponent(testId)}`)}>Back to Test</button>
+          <button className="btn btn-sm btn-outline-secondary" disabled={refreshing} onClick={load}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
           <AlertDialogConfirmation2
             onContinue={evaluateTest}
             evaluating={evaluating}
@@ -149,51 +148,53 @@ export default function ManageCandidates() {
 
       <div className="col g-3">
         <div className="col-md-17">
-          <div className="surface p-3 rounded-3" style={{ border:'1px solid var(--border)', minHeight:300 }}>
+          <div className="surface p-3 rounded-3" style={{ border: '1px solid var(--border)', minHeight: 300 }}>
             <div className="d-flex justify-content-between align-items-center mb-2">
               <h2 className="h6 m-0">Current Candidates ({candidates.length})</h2>
-              <button className="btn btn-sm btn-outline-danger" disabled={!selectedEmails.length || removing} onClick={removeSelected}>{removing? 'Removing…': `Remove Selected (${selectedEmails.length})`}</button>
+              <button className="btn btn-sm btn-outline-danger" disabled={!selectedEmails.length || removing} onClick={removeSelected}>{removing ? 'Removing…' : `Remove Selected (${selectedEmails.length})`}</button>
             </div>
             <div className="overflow-auto" style={{ maxHeight: '60vh' }}>
-              <table className="table table-sm align-middle" style={{ fontSize:12 }}>
+              <table className="table table-sm align-middle" style={{ fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th style={{width:30}}></th>
+                    <th style={{ width: 30 }}></th>
                     <th>Email</th>
-                    <th style={{width:120}}>Attempts Allotted</th>
-                    <th style={{width:120}}>Attempts Left</th>
+                    <th style={{ width: 120 }}>Attempts Allotted</th>
+                    <th style={{ width: 120 }}>Attempts Left</th>
+                    <th style={{ width: 120 }}>Best Score</th>
                   </tr>
                 </thead>
                 <tbody>
                   {candidates.map(c => (
-                    <tr key={c.candidate_email} className={selectedEmails.includes(c.candidate_email)? 'table-primary': ''}>
-                      <td><input type="checkbox" checked={selectedEmails.includes(c.candidate_email)} onChange={()=> toggleSelect(c.candidate_email)} /></td>
+                    <tr key={c.candidate_email} className={selectedEmails.includes(c.candidate_email) ? 'table-primary' : ''}>
+                      <td className="text-center"><input type="checkbox" checked={selectedEmails.includes(c.candidate_email)} onChange={() => toggleSelect(c.candidate_email)} /></td>
                       <td>{c.candidate_email}</td>
-                      <td>{c.attempts_alloted}</td>
-                      <td>{c.attempt_remaining}</td>
+                      <td className="text-center">{c.attempts_alloted}</td>
+                      <td className="text-center">{c.attempt_remaining}</td>
+                      <td className="text-center">{c.best_score}</td>
                     </tr>
                   ))}
-                  {!candidates.length && <tr><td colSpan={3} className="text-muted">No candidates added yet.</td></tr>}
+                  {!candidates.length && <tr><td colSpan={5} className="text-muted text-center">No candidates added yet.</td></tr>}
                 </tbody>
               </table>
             </div>
-            <div className="small mt-2" style={{ color:'var(--muted)' }}>Select candidates to remove. Attempts value used when adding or removing per API requirements.</div>
+            <div className="small mt-2" style={{ color: 'var(--muted)' }}>Select candidates to remove. Attempts value used when adding or removing per API requirements.</div>
           </div>
         </div>
-        <br/>
+        <br />
         <div className="col-md-17">
-          <div className="surface p-3 rounded-3 mb-3" style={{ border:'1px solid var(--border)' }}>
+          <div className="surface p-3 rounded-3 mb-3" style={{ border: '1px solid var(--border)' }}>
             <h2 className="h6">Add Candidates</h2>
-            <div className="mb-2 small" style={{ color:'var(--muted)' }}>Enter emails separated by commas or new lines.</div>
-            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e=> setEmailsText(e.target.value)} placeholder="candidate1@example.com,candidate2@example.com" disabled={evaluated} />
+            <div className="mb-2 small" style={{ color: 'var(--muted)' }}>Enter emails separated by commas or new lines.</div>
+            <textarea className="form-control mb-2" rows={5} value={emailsText} onChange={e => setEmailsText(e.target.value)} placeholder="candidate1@example.com,candidate2@example.com" disabled={evaluated} />
             <div className="d-flex gap-2 align-items-end mb-2">
               <div>
                 <label className="form-label small mb-1">Attempts</label>
-                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e=> setAttempts(parseInt(e.target.value))} disabled={evaluated} />
+                <input type="number" min={1} className="form-control form-control-sm" value={attempts} onChange={e => setAttempts(parseInt(e.target.value))} disabled={evaluated} />
               </div>
-              <button className="btn btn-sm btn-primary mt-auto" disabled={adding || evaluated} onClick={addCandidates}>{adding? 'Adding…':'Add'}</button>
+              <button className="btn btn-sm btn-primary mt-auto" disabled={adding || evaluated} onClick={addCandidates}>{adding ? 'Adding…' : 'Add'}</button>
             </div>
-            {savingMsg && <div className="small" style={{ color:/fail|error/i.test(savingMsg)?'var(--bs-danger)':'var(--muted)' }}>{savingMsg}</div>}
+            {savingMsg && <div className="small" style={{ color: /fail|error/i.test(savingMsg) ? 'var(--bs-danger)' : 'var(--muted)' }}>{savingMsg}</div>}
           </div>
         </div>
       </div>
