@@ -6,6 +6,13 @@ import { getCookie, setCookie, deleteCookie } from '../common/cookie.js';
 import { apiPut, apiPost, apiGet } from '../common/api.js';
 import { useNavigate } from 'react-router-dom';
 import { formatDate } from '../common/appUtils.js';
+import {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+} from "@/components/ui/select"
 
 const sections = [
     { id: 'profile', label: 'Profile', icon: FiUser },
@@ -85,15 +92,30 @@ function AppearancePanel() {
             <p style={{ color: 'var(--muted)' }}>Choose how QuantumScholar looks on this device.</p>
             <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <label className="form-label">Theme</label>
-                <select
-                    className="form-select"
-                    style={{ width: 160 }}
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}>
-                    <option value="system">System</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                </select>
+                <Select value={mode} onValueChange={setMode}>
+                    <SelectTrigger
+                        className="w-[180px]"
+                        style={{
+                            borderColor: 'var(--border)',
+                            backgroundColor: 'var(--bg-elev)',
+                            color: 'var(--text)'
+                        }}
+                    >
+                        <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent
+                        className="border"
+                        style={{
+                            borderColor: 'var(--border)',
+                            backgroundColor: 'var(--bg-elev)',
+                            color: 'var(--text)'
+                        }}
+                    >
+                        <SelectItem value="system">System</SelectItem>
+                        <SelectItem value="light">Light</SelectItem>
+                        <SelectItem value="dark">Dark</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
             {/* linebreak */}
             <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
@@ -125,7 +147,7 @@ function ProfilePanel({ user, onUserUpdate }) {
         deleteCookie('qs-user', { path: '/' });
         deleteCookie('qs-token', { path: '/' });
         localStorage.removeItem('qs-user');
-
+        localStorage.removeItem('qs-token');
     };
 
     const save = async (e) => {
@@ -134,7 +156,7 @@ function ProfilePanel({ user, onUserUpdate }) {
         setErr('');
         try {
             const token = getCookie('qs-token');
-            await apiPut('/api/profile', { name, birth_date: birth }, { token });
+            await apiPut('/api/profile', { name, birthdate: birth+"T00:00:00Z" }, { token });
             await loadData(token).then((profile) => {
                 if (profile) {
                     onUserUpdate && onUserUpdate(profile);
@@ -248,7 +270,7 @@ function ProfilePanel({ user, onUserUpdate }) {
 }
 
 function BillingPanel({ user, onUserUpdate }) {
-    const [coinsToBuy, setCoinsToBuy] = useState(50);
+    const [coinsToBuy, setCoinsToBuy] = useState(100);
     const [loading, setLoading] = useState(false);
     const [currency, setCurrency] = useState('/api/purchase-qscoins-inr');
     const [error, setError] = useState('');
@@ -398,9 +420,9 @@ function BillingPanel({ user, onUserUpdate }) {
                     <div className="col-sm-4">
                         <label className="form-label">QS Coins to buy</label>
                         <input type="number" min={1} className="form-control" value={coinsToBuy}
-                            onChange={(e) => setCoinsToBuy(parseInt(e.target.value || '0', 10))} />
+                            onChange={(e) => setCoinsToBuy(parseInt(e.target.value))} />
                     </div>
-                </div> 
+                </div>
                 <div className="d-flex gap-2 mt-3">
                     <button type="submit" className="btn btn-primary" disabled={loading || !user}>
                         {loading ? 'Processing…' : 'Buy with Razorpay'}
@@ -451,7 +473,15 @@ function AdvancedPanel() {
     return (
         <section>
             <h2 className="h5 fw-bold mb-3">Advanced</h2>
-            <button className="btn btn-outline-danger">Clear cached data</button>
+            <button className="btn btn-outline-danger" onClick={()=>{
+                if (window.confirm('Are you sure you want to clear cached data? This will log you out and reset all settings.')) {
+                    deleteCookie('qs-user', { path: '/' });
+                    deleteCookie('qs-token', { path: '/' });
+                    localStorage.removeItem('qs-user');
+                    localStorage.removeItem('qs-token');
+                    window.location.reload();
+                }
+            }}>Clear cached data</button>
         </section>
     );
 }

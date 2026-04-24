@@ -88,10 +88,12 @@ const NewAuth = () => {
           <form onSubmit={submit} className="mt-3">
             <div className="mb-3">
               <label htmlFor="name" className="form-label">Full name</label>
-              <input id="name" type="text" className="form-control" value={name}
+              <input id="name" type="text" className="form-control mb-2" value={name}
                      onChange={(e) => setName(e.target.value)} placeholder="Your full name" required />
               <br />
-              <input type='date' id="birthdate" className="form-control" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+              {/* dd/mm/yyyy */}
+              <label htmlFor="birthdate" className="form-label">Birth date</label>
+              <input type='date' id="birthdate" className="form-control" placeholder="mm/dd/yyyy" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
               <br/>
             </div>
             <div className="d-flex gap-3 align-items-center">

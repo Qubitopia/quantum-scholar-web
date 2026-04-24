@@ -818,3 +818,136 @@ input::placeholder, textarea::placeholder {
     @apply font-sans;
 	}
 }
+
+
+/* DateTimePicker styling for dark mode */
+.btn-outline-secondary {
+	color: var(--text);
+	border-color: var(--border);
+	background-color: var(--bg-elev);
+}
+
+.datetimepicker .datetimepicker-trigger {
+	color: var(--text) !important;
+	border-color: var(--border) !important;
+	background-color: var(--bg-elev) !important;
+}
+
+.datetimepicker .datetimepicker-trigger:hover {
+	background-color: color-mix(in srgb, var(--bg-elev) 90%, transparent) !important;
+	color: var(--text) !important;
+}
+
+.datetimepicker .datetimepicker-trigger svg {
+	color: var(--muted);
+}
+
+.btn-outline-secondary:hover {
+	background-color: color-mix(in srgb, var(--bg-elev) 90%, transparent);
+	color: var(--text);
+}
+
+.btn-outline-secondary:disabled {
+	color: var(--muted);
+	opacity: 0.6;
+}
+
+/* Time input styling */
+input[type="time"] {
+	color: var(--text);
+	background-color: var(--bg-elev);
+	border-color: var(--border);
+}
+
+input[type="time"]:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.datetimepicker input[type="time"] {
+	color: var(--text) !important;
+	background-color: var(--bg-elev) !important;
+	border-color: var(--border) !important;
+}
+
+/* Popover content styling */
+[role="dialog"] {
+	background-color: var(--bg-elev);
+	border-color: var(--border);
+	color: var(--text);
+}
+
+.datetimepicker-popover {
+	background-color: var(--bg-elev) !important;
+	border-color: var(--border) !important;
+	color: var(--text) !important;
+}
+
+/* Calendar styling inside popover */
+.rdp {
+	--rdp-cell-size: 40px;
+	--rdp-caption_label_font_size: 14px;
+	--rdp-months_gap: 1rem;
+	--rdp-weekdays_margin_bottom: 0.5rem;
+	--rdp-weeks_padding: 0;
+	color: var(--text);
+}
+
+.rdp-caption {
+	color: var(--text);
+}
+
+.rdp-head_cell {
+	color: var(--muted);
+	font-weight: 600;
+}
+
+.rdp-cell {
+	color: var(--text);
+}
+
+.rdp-day {
+	color: var(--text);
+}
+
+.rdp-day:hover:not([disabled]):not(.rdp-day_selected):not(.rdp-day_outside) {
+	background-color: color-mix(in srgb, var(--bg-elev) 85%, transparent);
+}
+
+.rdp-day_selected:not([disabled]) {
+	background-color: #2563eb;
+	color: white;
+	font-weight: bold;
+}
+
+/* react-day-picker v9 + shadcn calendar selected state (used by DateTimePicker) */
+.datetimepicker-popover .rdp-button[aria-selected="true"],
+.datetimepicker-popover .rdp-day_button[aria-selected="true"],
+.datetimepicker-popover [data-selected-single="true"],
+.datetimepicker-popover [data-range-start="true"],
+.datetimepicker-popover [data-range-end="true"] {
+	background-color: #2563eb !important;
+	color: #ffffff !important;
+	font-weight: 700;
+}
+
+/* Keep selected text readable even when date is marked as outside month. */
+.datetimepicker-popover .rdp-outside .rdp-button[aria-selected="true"],
+.datetimepicker-popover .rdp-day_outside .rdp-day_button[aria-selected="true"] {
+	color: #ffffff !important;
+	opacity: 1 !important;
+}
+
+.rdp-day_today:not(.rdp-day_selected) {
+	font-weight: bold;
+	color: #2563eb;
+}
+
+.rdp-button {
+	color: var(--text);
+}
+
+.rdp-button:hover:not([disabled]):not(.rdp-day_selected) {
+	background-color: color-mix(in srgb, var(--bg-elev) 85%, transparent);
+}
